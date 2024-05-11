@@ -18,11 +18,11 @@
 
 //! Console informant. Prints sync progress and block events. Runs on the calling thread.
 
-use ansi_term::{Colour, Style};
+pub use ansi_term::{Colour, Style};
 use futures::prelude::*;
 use futures_timer::Delay;
 use log::{debug, info, trace};
-use sc_client_api::{BlockchainEvents, UsageProvider};
+use sc_client_api::{BlockImportNotification, BlockchainEvents, UsageProvider};
 use sc_network::NetworkStatusProvider;
 use sc_network_sync::SyncStatusProvider;
 use sp_blockchain::HeaderMetadata;
@@ -51,7 +51,7 @@ impl Default for OutputFormat {
 	}
 }
 
-enum ColorOrStyle {
+pub enum ColorOrStyle {
 	Color(Colour),
 	Style(Style),
 }
@@ -79,7 +79,7 @@ impl ColorOrStyle {
 
 impl OutputFormat {
 	/// Print with color if `self.enable_color == true`.
-	fn print_with_color(
+	pub fn print_with_color(
 		&self,
 		color: impl Into<ColorOrStyle>,
 		data: impl ToString,
@@ -92,6 +92,27 @@ impl OutputFormat {
 	}
 }
 
+pub trait PrintImportNotification<Block: BlockT> {
+	fn print(&self, n: BlockImportNotification<Block>);
+}
+
+struct DefaultImportNotificationPrinter {
+	format: OutputFormat,
+}
+
+impl<Block: BlockT> PrintImportNotification<Block> for DefaultImportNotificationPrinter {
+	fn print(&self, n: BlockImportNotification<Block>) {
+		let best_indicator = if n.is_new_best { "🏆" } else { "🆕" };
+		info!(
+			target: "substrate",
+			"{best_indicator} Imported #{} ({} → {})",
+			self.format.print_with_color(Colour::White.bold(), n.header.number()),
+			n.header.parent_hash(),
+			n.hash,
+		);
+	}
+}
+
 /// Builds the informant and returns a `Future` that drives the informant.
 pub async fn build<B: BlockT, C, N, S>(client: Arc<C>, network: N, syncing: S, format: OutputFormat)
 where
@@ -99,6 +120,24 @@ where
 	S: SyncStatusProvider<B>,
 	C: UsageProvider<B> + HeaderMetadata<B> + BlockchainEvents<B>,
 	<C as HeaderMetadata<B>>::Error: Display,
+{
+	let import_notification_printer = DefaultImportNotificationPrinter { format: format.clone() };
+	build_full(client, network, syncing, format, import_notification_printer).await
+}
+
+/// Builds the informant and returns a `Future` that drives the informant.
+pub async fn build_full<B: BlockT, C, N, S, P>(
+	client: Arc<C>,
+	network: N,
+	syncing: S,
+	format: OutputFormat,
+	import_notification_printer: P,
+) where
+	N: NetworkStatusProvider,
+	S: SyncStatusProvider<B>,
+	C: UsageProvider<B> + HeaderMetadata<B> + BlockchainEvents<B>,
+	<C as HeaderMetadata<B>>::Error: Display,
+	P: PrintImportNotification<B>,
 {
 	let mut display = display::InformantDisplay::new(format.clone());
 
@@ -130,17 +169,19 @@ where
 
 	futures::select! {
 		() = display_notifications.fuse() => (),
-		() = display_block_import(client, format).fuse() => (),
+		() = display_block_import(client, format, import_notification_printer).fuse() => (),
 	};
 }
 
-fn display_block_import<B: BlockT, C>(
+fn display_block_import<B: BlockT, C, P>(
 	client: Arc<C>,
 	format: OutputFormat,
+	import_notification_printer: P,
 ) -> impl Future<Output = ()>
 where
 	C: UsageProvider<B> + HeaderMetadata<B> + BlockchainEvents<B>,
 	<C as HeaderMetadata<B>>::Error: Display,
+	P: PrintImportNotification<B>,
 {
 	let mut last_best = {
 		let info = client.usage_info();
@@ -187,14 +228,7 @@ where
 				last_blocks.pop_front();
 			}
 
-			let best_indicator = if n.is_new_best { "🏆" } else { "🆕" };
-			info!(
-				target: "substrate",
-				"{best_indicator} Imported #{} ({} → {})",
-				format.print_with_color(Colour::White.bold(), n.header.number()),
-				n.header.parent_hash(),
-				n.hash,
-			);
+			import_notification_printer.print(n);
 		}
 
 		future::ready(())
