@@ -299,6 +299,19 @@ where
 	Ok(Arc::new(Backend::new(settings, CANONICALIZATION_DELAY)?))
 }
 
+/// Create an instance of DB-backend backend.
+pub fn new_backend_with_db<Block>(
+	db: Arc<dyn sc_client_db::Database<sc_client_db::DbHash>>,
+	settings: DatabaseSettings,
+) -> Result<Arc<Backend<Block>>, sp_blockchain::Error>
+where
+       Block: BlockT,
+{
+	const CANONICALIZATION_DELAY: u64 = 4096;
+
+	Ok(Arc::new(Backend::with_db(db, settings, CANONICALIZATION_DELAY, true)?))
+}
+
 /// Create an instance of client backed by given backend.
 pub fn new_client<E, Block, RA, G>(
 	backend: Arc<Backend<Block>>,
