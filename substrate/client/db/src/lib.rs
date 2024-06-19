@@ -1142,6 +1142,15 @@ impl<Block: BlockT> Backend<Block> {
 		Self::from_database(db as Arc<_>, canonicalization_delay, &db_config, needs_init)
 	}
 
+	pub fn with_db(
+		db: Arc<dyn Database<DbHash>>,
+		db_config: DatabaseSettings,
+		canonicalization_delay: u64,
+		should_init: bool,
+    ) -> ClientResult<Self> {
+        Self::from_database(db, canonicalization_delay, &db_config, should_init)
+    }
+
 	/// Reset the shared trie cache.
 	pub fn reset_trie_cache(&self) {
 		if let Some(cache) = &self.shared_trie_cache {
