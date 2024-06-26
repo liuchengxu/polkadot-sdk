@@ -2021,18 +2021,18 @@ impl<T: Config> Pallet<T> {
 			.saturating_add(T::BlockWeights::get().get(info.class).base_extrinsic);
 		info.pays_fee = extract_actual_pays_fee(r, &info);
 
-		Self::deposit_event(match r {
-			Ok(_) => Event::ExtrinsicSuccess { dispatch_info: info },
-			Err(err) => {
-				log::trace!(
-					target: LOG_TARGET,
-					"Extrinsic failed at block({:?}): {:?}",
-					Self::block_number(),
-					err,
-				);
-				Event::ExtrinsicFailed { dispatch_error: err.error, dispatch_info: info }
-			},
-		});
+		// Self::deposit_event(match r {
+			// Ok(_) => Event::ExtrinsicSuccess { dispatch_info: info },
+			// Err(err) => {
+				// log::trace!(
+					// target: LOG_TARGET,
+					// "Extrinsic failed at block({:?}): {:?}",
+					// Self::block_number(),
+					// err,
+				// );
+				// Event::ExtrinsicFailed { dispatch_error: err.error, dispatch_info: info }
+			// },
+		// });
 
 		let next_extrinsic_index = Self::extrinsic_index().unwrap_or_default() + 1u32;
 
