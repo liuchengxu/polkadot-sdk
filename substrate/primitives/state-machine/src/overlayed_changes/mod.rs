@@ -327,6 +327,32 @@ impl<H: Hasher> OverlayedChanges<H> {
 		self.top.set(key, val, extrinsic_index);
 	}
 
+	///
+	pub fn set_extrinsic_storage_changes(
+		&mut self,
+		changes: impl IntoIterator<Item = (Vec<(StorageKey, Option<StorageValue>)>, Option<u32>)>,
+	) {
+		self.mark_dirty();
+
+		for (tx_changes, extrinsic_index) in changes.into_iter() {
+			for (key, val) in tx_changes {
+				let size_write = val.as_ref().map(|x| x.len() as u64).unwrap_or(0);
+				self.stats.tally_write_overlay(size_write);
+				self.top.set(key, val, extrinsic_index);
+			}
+		}
+	}
+
+	///
+	pub fn set_top_storage(
+		&mut self,
+		key: StorageKey,
+		val: Option<StorageValue>,
+		extrinsic_index: Option<u32>,
+	) {
+		self.top.set(key, val, extrinsic_index);
+	}
+
 	/// Append a element to storage, init with existing value if first write.
 	pub fn append_storage(
 		&mut self,

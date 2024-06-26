@@ -620,6 +620,9 @@ pub trait ApiExt<Block: BlockT> {
 	/// Returns the current active proof recorder.
 	fn proof_recorder(&self) -> Option<ProofRecorder<Block>>;
 
+	/// Returns the mutable reference of OverlayedChanges.
+	fn changes_mut(&mut self) -> &mut RefCell<OverlayedChanges<HashingFor<Block>>>;
+
 	/// Convert the api object into the storage changes that were done while executing runtime
 	/// api functions.
 	///

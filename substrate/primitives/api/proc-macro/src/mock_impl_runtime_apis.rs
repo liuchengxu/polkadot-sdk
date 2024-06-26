@@ -109,6 +109,10 @@ fn implement_common_api_traits(block_type: TypePath, self_ty: Type) -> Result<To
 				unimplemented!("`proof_recorder` not implemented for runtime api mocks")
 			}
 
+			fn changes_mut(&mut self) -> &mut std::cell::RefCell<#crate_::OverlayedChanges<#crate_::HashingFor<Block>>> {
+				unimplemented!("`changes_mut` not implemented for runtime api mocks")
+			}
+
 			fn into_storage_changes<B: #crate_::StateBackend<#crate_::HashingFor<#block_type>>>(
 				&self,
 				_: &B,

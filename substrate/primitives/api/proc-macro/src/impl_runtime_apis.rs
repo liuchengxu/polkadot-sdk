@@ -341,6 +341,10 @@ fn generate_runtime_api_base_structures() -> Result<TokenStream> {
 					})
 				}
 
+				fn changes_mut(&mut self) -> &mut std::cell::RefCell<#crate_::OverlayedChanges<#crate_::HashingFor<Block>>> {
+					&mut self.changes
+				}
+
 				fn into_storage_changes<B: #crate_::StateBackend<#crate_::HashingFor<Block>>>(
 					&self,
 					backend: &B,
