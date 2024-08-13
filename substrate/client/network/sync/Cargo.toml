@@ -48,6 +48,7 @@ sp-consensus = { workspace = true, default-features = true }
 sp-core = { workspace = true, default-features = true }
 sp-consensus-grandpa = { workspace = true, default-features = true }
 sp-runtime = { workspace = true, default-features = true }
+zstd = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

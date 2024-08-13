@@ -287,6 +287,12 @@ pub struct SyncingEngine<B: BlockT, Client> {
 
 	/// Handle to import queue.
 	import_queue: Box<dyn ImportQueueService<B>>,
+
+	/// Total bytes of the state sync, if compressed.
+	total_bytes_compressed: usize,
+
+	/// Total bytes of the state sync, uncompressed (the status-quo).
+	total_bytes_uncompressed: usize,
 }
 
 impl<B: BlockT, Client> SyncingEngine<B, Client>
@@ -487,6 +493,8 @@ where
 				state_request_protocol_name,
 				warp_sync_protocol_name,
 				import_queue,
+				total_bytes_compressed: 0,
+				total_bytes_uncompressed: 0,
 			},
 			SyncingService::new(tx, num_connected, is_major_syncing),
 			block_announce_config,
@@ -1207,11 +1215,14 @@ where
 		Ok(request.encode_to_vec())
 	}
 
-	fn decode_state_response(response: &[u8]) -> Result<OpaqueStateResponse, String> {
+	fn decode_state_response(response: &[u8]) -> Result<(usize, usize, OpaqueStateResponse), String> {
+		let compressed_data = zstd::stream::encode_all(response, 0).expect("Failed to compress state response");
+		let compressed_size = compressed_data.len();
+		let uncompressed_size = response.len();
 		let response = StateResponse::decode(response)
 			.map_err(|error| format!("Failed to decode state response: {error}"))?;
 
-		Ok(OpaqueStateResponse(Box::new(response)))
+		Ok((compressed_size, uncompressed_size, OpaqueStateResponse(Box::new(response))))
 	}
 
 	fn process_response_event(&mut self, response_event: ResponseEvent<B>) {
@@ -1251,7 +1262,7 @@ where
 					}
 				},
 				PeerRequest::State => {
-					let response = match Self::decode_state_response(&resp[..]) {
+					let (compressed_size, uncompressed_size, response) = match Self::decode_state_response(&resp[..]) {
 						Ok(proto) => proto,
 						Err(e) => {
 							debug!(
@@ -1266,6 +1277,11 @@ where
 							return
 						},
 					};
+
+					self.total_bytes_compressed += compressed_size;
+					self.total_bytes_uncompressed += uncompressed_size;
+
+					log::info!("==== total_bytes_compressed: {}, total_bytes_uncompressed: {}", self.total_bytes_compressed, self.total_bytes_uncompressed);
 
 					self.strategy.on_state_response(peer_id, key, response);
 				},
