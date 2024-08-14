@@ -34,6 +34,7 @@ smallvec = { workspace = true, default-features = true }
 thiserror = { workspace = true }
 tokio-stream = { workspace = true }
 tokio = { features = ["macros", "time"], workspace = true, default-features = true }
+zstd = { workspace = true }
 fork-tree = { workspace = true, default-features = true }
 prometheus-endpoint = { workspace = true, default-features = true }
 sc-client-api = { workspace = true, default-features = true }

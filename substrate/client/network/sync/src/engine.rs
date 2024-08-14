@@ -1207,8 +1207,10 @@ where
 		Ok(request.encode_to_vec())
 	}
 
-	fn decode_state_response(response: &[u8]) -> Result<OpaqueStateResponse, String> {
-		let response = StateResponse::decode(response)
+	fn decode_state_response(compressed_response: &[u8]) -> Result<OpaqueStateResponse, String> {
+		let response = zstd::stream::decode_all(compressed_response)
+			.map_err(|error| format!("Failed to decompress state response: {error}"))?;
+		let response = StateResponse::decode(response.as_slice())
 			.map_err(|error| format!("Failed to decode state response: {error}"))?;
 
 		Ok(OpaqueStateResponse(Box::new(response)))

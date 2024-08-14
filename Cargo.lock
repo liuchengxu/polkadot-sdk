@@ -17919,6 +17919,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "zstd 0.12.4",
 ]
 
 [[package]]
