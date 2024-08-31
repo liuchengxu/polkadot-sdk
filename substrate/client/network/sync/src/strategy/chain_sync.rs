@@ -1715,6 +1715,7 @@ where
 		match import_result {
 			ImportResult::Import(hash, header, state, body, justifications) => {
 				let origin = BlockOrigin::NetworkInitialSync;
+				let number = header.number();
 				let block = IncomingBlock {
 					hash,
 					header: Some(header),
@@ -1727,7 +1728,7 @@ where
 					skip_execution: self.skip_execution(),
 					state: Some(state),
 				};
-				debug!(target: LOG_TARGET, "State download is complete. Import is queued");
+				debug!(target: LOG_TARGET, "State download (#{number},{hash}) is complete. Import is queued");
 				self.actions.push(ChainSyncAction::ImportBlocks { origin, blocks: vec![block] });
 				Ok(())
 			},
