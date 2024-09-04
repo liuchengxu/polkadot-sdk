@@ -1578,6 +1578,27 @@ where
 						state: AncestorSearchState::ExponentialBackoff(One::one()),
 					};
 					Some((id, ancestry_request::<B>(current)))
+				} else if let Some((range, req)) = gap_sync.as_mut().and_then(|sync| {
+					peer_gap_block_request(
+						&id,
+						peer,
+						&mut sync.blocks,
+						attrs,
+						sync.target,
+						sync.best_queued_number,
+						max_blocks_per_request,
+					)
+				}) {
+					peer.state = PeerSyncState::DownloadingGap(range.start);
+					trace!(
+						target: LOG_TARGET,
+						"New gap block request for {}, (best:{}, common:{}) {:?}",
+						id,
+						peer.best_number,
+						peer.common_number,
+						req,
+					);
+					Some((id, req))
 				} else if let Some((range, req)) = peer_block_request(
 					&id,
 					peer,
@@ -1616,27 +1637,6 @@ where
 				) {
 					trace!(target: LOG_TARGET, "Downloading fork {hash:?} from {id}");
 					peer.state = PeerSyncState::DownloadingStale(hash);
-					Some((id, req))
-				} else if let Some((range, req)) = gap_sync.as_mut().and_then(|sync| {
-					peer_gap_block_request(
-						&id,
-						peer,
-						&mut sync.blocks,
-						attrs,
-						sync.target,
-						sync.best_queued_number,
-						max_blocks_per_request,
-					)
-				}) {
-					peer.state = PeerSyncState::DownloadingGap(range.start);
-					trace!(
-						target: LOG_TARGET,
-						"New gap block request for {}, (best:{}, common:{}) {:?}",
-						id,
-						peer.best_number,
-						peer.common_number,
-						req,
-					);
 					Some((id, req))
 				} else {
 					None
@@ -1715,7 +1715,7 @@ where
 		match import_result {
 			ImportResult::Import(hash, header, state, body, justifications) => {
 				let origin = BlockOrigin::NetworkInitialSync;
-				let number = header.number();
+				let number = *header.number();
 				let block = IncomingBlock {
 					hash,
 					header: Some(header),

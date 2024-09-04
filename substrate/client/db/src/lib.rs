@@ -50,6 +50,7 @@ use std::{
 	path::{Path, PathBuf},
 	sync::Arc,
 };
+use utils::{BlockGap, BlockGapType};
 
 use crate::{
 	pinned_blocks_cache::PinnedBlocksCache,
@@ -522,7 +523,7 @@ impl<Block: BlockT> BlockchainDb<Block> {
 		}
 	}
 
-	fn update_block_gap(&self, gap: Option<(NumberFor<Block>, NumberFor<Block>)>) {
+	fn update_block_gap(&self, gap: Option<BlockGap<NumberFor<Block>>>) {
 		let mut meta = self.meta.write();
 		meta.block_gap = gap;
 	}
@@ -538,7 +539,7 @@ impl<Block: BlockT> BlockchainDb<Block> {
 	fn insert_justifications_if_pinned(&self, hash: Block::Hash, justification: Justification) {
 		let mut cache = self.pinned_blocks_cache.write();
 		if !cache.contains(hash) {
-			return
+			return;
 		}
 
 		let justifications = Justifications::from(justification);
@@ -551,7 +552,7 @@ impl<Block: BlockT> BlockchainDb<Block> {
 	fn insert_persisted_justifications_if_pinned(&self, hash: Block::Hash) -> ClientResult<()> {
 		let mut cache = self.pinned_blocks_cache.write();
 		if !cache.contains(hash) {
-			return Ok(())
+			return Ok(());
 		}
 
 		let justifications = self.justifications_uncached(hash)?;
@@ -565,7 +566,7 @@ impl<Block: BlockT> BlockchainDb<Block> {
 	fn insert_persisted_body_if_pinned(&self, hash: Block::Hash) -> ClientResult<()> {
 		let mut cache = self.pinned_blocks_cache.write();
 		if !cache.contains(hash) {
-			return Ok(())
+			return Ok(());
 		}
 
 		let body = self.body_uncached(hash)?;
@@ -655,7 +656,7 @@ impl<Block: BlockT> BlockchainDb<Block> {
 							},
 						}
 					}
-					return Ok(Some(body))
+					return Ok(Some(body));
 				},
 				Err(err) =>
 					return Err(sp_blockchain::Error::Backend(format!(
@@ -672,7 +673,7 @@ impl<Block: BlockT> sc_client_api::blockchain::HeaderBackend<Block> for Blockcha
 	fn header(&self, hash: Block::Hash) -> ClientResult<Option<Block::Header>> {
 		let mut cache = self.header_cache.lock();
 		if let Some(result) = cache.get_refresh(&hash) {
-			return Ok(result.clone())
+			return Ok(result.clone());
 		}
 		let header = utils::read_header(
 			&*self.db,
@@ -694,7 +695,7 @@ impl<Block: BlockT> sc_client_api::blockchain::HeaderBackend<Block> for Blockcha
 			finalized_number: meta.finalized_number,
 			finalized_state: meta.finalized_state,
 			number_leaves: self.leaves.read().count(),
-			block_gap: meta.block_gap,
+			block_gap: meta.block_gap.as_ref().map(|gap| (gap.start, gap.end)),
 		}
 	}
 
@@ -724,7 +725,7 @@ impl<Block: BlockT> sc_client_api::blockchain::Backend<Block> for BlockchainDb<B
 	fn body(&self, hash: Block::Hash) -> ClientResult<Option<Vec<Block::Extrinsic>>> {
 		let cache = self.pinned_blocks_cache.read();
 		if let Some(result) = cache.body(&hash) {
-			return Ok(result.clone())
+			return Ok(result.clone());
 		}
 
 		self.body_uncached(hash)
@@ -733,7 +734,7 @@ impl<Block: BlockT> sc_client_api::blockchain::Backend<Block> for BlockchainDb<B
 	fn justifications(&self, hash: Block::Hash) -> ClientResult<Option<Justifications>> {
 		let cache = self.pinned_blocks_cache.read();
 		if let Some(result) = cache.justifications(&hash) {
-			return Ok(result.clone())
+			return Ok(result.clone());
 		}
 
 		self.justifications_uncached(hash)
@@ -877,7 +878,7 @@ impl<Block: BlockT> BlockImportOperation<Block> {
 		state_version: StateVersion,
 	) -> ClientResult<Block::Hash> {
 		if storage.top.keys().any(|k| well_known_keys::is_child_storage_key(k)) {
-			return Err(sp_blockchain::Error::InvalidState)
+			return Err(sp_blockchain::Error::InvalidState);
 		}
 
 		let child_delta = storage.children_default.values().map(|child_content| {
@@ -1288,7 +1289,7 @@ impl<Block: BlockT> Backend<Block> {
 		if meta.best_number.saturating_sub(best_number).saturated_into::<u64>() >
 			self.canonicalization_delay
 		{
-			return Err(sp_blockchain::Error::SetHeadTooOld)
+			return Err(sp_blockchain::Error::SetHeadTooOld);
 		}
 
 		let parent_exists =
@@ -1307,7 +1308,7 @@ impl<Block: BlockT> Backend<Block> {
 						(&r.number, &r.hash)
 					);
 
-					return Err(sp_blockchain::Error::NotInFinalizedChain)
+					return Err(sp_blockchain::Error::NotInFinalizedChain);
 				}
 
 				retracted.push(r.hash);
@@ -1352,7 +1353,7 @@ impl<Block: BlockT> Backend<Block> {
 				"Last finalized {:?} not parent of {:?}",
 				last_finalized,
 				header.hash()
-			)))
+			)));
 		}
 		Ok(())
 	}
@@ -1429,7 +1430,7 @@ impl<Block: BlockT> Backend<Block> {
 				hash_to_canonicalize,
 				to_canonicalize.saturated_into(),
 			) {
-				return Ok(())
+				return Ok(());
 			}
 
 			trace!(target: "db", "Canonicalize block #{} ({:?})", to_canonicalize, hash_to_canonicalize);
@@ -1453,8 +1454,9 @@ impl<Block: BlockT> Backend<Block> {
 		let mut meta_updates = Vec::with_capacity(operation.finalized_blocks.len());
 		let (best_num, mut last_finalized_hash, mut last_finalized_num, mut block_gap) = {
 			let meta = self.blockchain.meta.read();
-			(meta.best_number, meta.finalized_hash, meta.finalized_number, meta.block_gap)
+			(meta.best_number, meta.finalized_hash, meta.finalized_number, meta.block_gap.clone())
 		};
+		let mut block_gap_updated = false;
 
 		let mut current_transaction_justifications: HashMap<Block::Hash, Justification> =
 			HashMap::new();
@@ -1487,6 +1489,7 @@ impl<Block: BlockT> Backend<Block> {
 				.map(|(n, _)| n)
 				.unwrap_or(Zero::zero());
 			let existing_header = number <= highest_leaf && self.blockchain.header(hash)?.is_some();
+			let body_exists = pending_block.body.is_some();
 
 			// blocks are keyed by number + hash.
 			let lookup_key = utils::number_and_hash_to_lookup_key(number, hash)?;
@@ -1683,39 +1686,106 @@ impl<Block: BlockT> Backend<Block> {
 						children,
 					);
 				}
+			}
 
-				if let Some((mut start, end)) = block_gap {
-					if number == start {
-						start += One::one();
-						utils::insert_number_to_key_mapping(
-							&mut transaction,
-							columns::KEY_LOOKUP,
-							number,
-							hash,
-						)?;
-					}
-					if start > end {
-						transaction.remove(columns::META, meta_keys::BLOCK_GAP);
-						block_gap = None;
-						debug!(target: "db", "Removed block gap.");
-					} else {
-						block_gap = Some((start, end));
-						debug!(target: "db", "Update block gap. {:?}", block_gap);
-						transaction.set(
-							columns::META,
-							meta_keys::BLOCK_GAP,
-							&(start, end).encode(),
-						);
+			let should_check_block_gap = !existing_header || !body_exists;
+
+			if should_check_block_gap {
+				if let Some(mut gap) = block_gap.clone() {
+					match gap.gap_type {
+						BlockGapType::MissingAll =>
+							if number == gap.start && body_exists {
+								gap.start += One::one();
+								utils::insert_number_to_key_mapping(
+									&mut transaction,
+									columns::KEY_LOOKUP,
+									number,
+									hash,
+								)?;
+								if gap.start > gap.end {
+									transaction.remove(columns::META, meta_keys::BLOCK_GAP);
+									block_gap = None;
+									debug!(target: "db", "Removed block gap.");
+								} else {
+									transaction.set(
+										columns::META,
+										meta_keys::BLOCK_GAP,
+										&gap.encode(),
+									);
+									block_gap = Some(gap);
+									debug!(target: "db", "Update block gap. {:?}", block_gap);
+								}
+								block_gap_updated = true;
+							},
+						BlockGapType::MissingBody => {
+							// Gap increased when syncing the header chain.
+							if number == gap.end + One::one() && !body_exists {
+								gap.end += One::one();
+								utils::insert_number_to_key_mapping(
+									&mut transaction,
+									columns::KEY_LOOKUP,
+									number,
+									hash,
+								)?;
+								block_gap = Some(gap.clone());
+								debug!(target: "db", "Update block gap. {:?}", block_gap);
+								transaction.set(columns::META, meta_keys::BLOCK_GAP, &gap.encode());
+								block_gap_updated = true;
+							// Gap decreased when doing the gap sync (downloading the full blocks).
+							} else if number == gap.start && body_exists {
+								gap.start += One::one();
+								utils::insert_number_to_key_mapping(
+									&mut transaction,
+									columns::KEY_LOOKUP,
+									number,
+									hash,
+								)?;
+								if gap.start > gap.end {
+									transaction.remove(columns::META, meta_keys::BLOCK_GAP);
+									block_gap = None;
+									debug!(target: "db", "Removed block gap.");
+								} else {
+									transaction.set(
+										columns::META,
+										meta_keys::BLOCK_GAP,
+										&gap.encode(),
+									);
+									block_gap = Some(gap);
+									debug!(target: "db", "Update block gap. {:?}", block_gap);
+								}
+								block_gap_updated = true;
+							}
+						},
 					}
 				} else if number > best_num + One::one() &&
 					number > One::one() && self.blockchain.header(parent_hash)?.is_none()
 				{
-					let gap = (best_num + One::one(), number - One::one());
+					let gap = BlockGap {
+						start: best_num + One::one(),
+						end: number - One::one(),
+						gap_type: BlockGapType::MissingAll,
+					};
 					transaction.set(columns::META, meta_keys::BLOCK_GAP, &gap.encode());
 					block_gap = Some(gap);
-					debug!(target: "db", "Detected block gap {:?}", block_gap);
+					debug!(target: "db", "Detected block gap (warp sync) {:?}", block_gap);
+					block_gap_updated = true;
+				} else if self.blockchain.header(parent_hash)?.is_some() &&
+					number == best_num + One::one() &&
+					!body_exists
+				{
+					let gap = BlockGap {
+						start: number,
+						end: number,
+						gap_type: BlockGapType::MissingBody,
+					};
+					transaction.set(columns::META, meta_keys::BLOCK_GAP, &gap.encode());
+					block_gap = Some(gap);
+					debug!(target: "db", "Detected block gap (fast sync) {:?}", block_gap);
+					block_gap_updated = true;
 				}
 			}
+
+			log::info!("==== should_check_block_gap: {should_check_block_gap}, block_gap_updated: {block_gap_updated}");
 
 			meta_updates.push(MetaUpdate {
 				hash,
@@ -1749,7 +1819,7 @@ impl<Block: BlockT> Backend<Block> {
 				return Err(sp_blockchain::Error::UnknownBlock(format!(
 					"Cannot set head {:?}",
 					set_head
-				)))
+				)));
 			}
 		}
 
@@ -1768,7 +1838,9 @@ impl<Block: BlockT> Backend<Block> {
 		for m in meta_updates {
 			self.blockchain.update_meta(m);
 		}
-		self.blockchain.update_block_gap(block_gap);
+		if block_gap_updated {
+			self.blockchain.update_block_gap(block_gap);
+		}
 
 		Ok(())
 	}
@@ -2138,14 +2210,14 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 		if number > self.blockchain.info().finalized_number ||
 			(hash != last_finalized && !is_descendent_of(&hash, &last_finalized)?)
 		{
-			return Err(ClientError::NotInFinalizedChain)
+			return Err(ClientError::NotInFinalizedChain);
 		}
 
 		let justifications = if let Some(mut stored_justifications) =
 			self.blockchain.justifications(hash)?
 		{
 			if !stored_justifications.append(justification) {
-				return Err(ClientError::BadJustification("Duplicate consensus engine ID".into()))
+				return Err(ClientError::BadJustification("Duplicate consensus engine ID".into()));
 			}
 			stored_justifications
 		} else {
@@ -2230,7 +2302,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 		let mut revert_blocks = || -> ClientResult<NumberFor<Block>> {
 			for c in 0..n.saturated_into::<u64>() {
 				if number_to_revert.is_zero() {
-					return Ok(c.saturated_into::<NumberFor<Block>>())
+					return Ok(c.saturated_into::<NumberFor<Block>>());
 				}
 				let mut transaction = Transaction::new();
 				let removed = self.blockchain.header(hash_to_revert)?.ok_or_else(|| {
@@ -2246,7 +2318,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 					if prev_number == best_number { best_hash } else { *removed.parent_hash() };
 
 				if !self.have_state_at(prev_hash, prev_number) {
-					return Ok(c.saturated_into::<NumberFor<Block>>())
+					return Ok(c.saturated_into::<NumberFor<Block>>());
 				}
 
 				match self.storage.state_db.revert_one() {
@@ -2342,7 +2414,10 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 		let best_hash = self.blockchain.info().best_hash;
 
 		if best_hash == hash {
-			return Err(sp_blockchain::Error::Backend(format!("Can't remove best block {:?}", hash)))
+			return Err(sp_blockchain::Error::Backend(format!(
+				"Can't remove best block {:?}",
+				hash
+			)));
 		}
 
 		let hdr = self.blockchain.header_metadata(hash)?;
@@ -2350,7 +2425,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 			return Err(sp_blockchain::Error::UnknownBlock(format!(
 				"State already discarded for {:?}",
 				hash
-			)))
+			)));
 		}
 
 		let mut leaves = self.blockchain.leaves.write();
@@ -2358,7 +2433,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 			return Err(sp_blockchain::Error::Backend(format!(
 				"Can't remove non-leaf block {:?}",
 				hash
-			)))
+			)));
 		}
 
 		let mut transaction = Transaction::new();
@@ -2398,7 +2473,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 			if let Some(outcome) = remove_outcome {
 				leaves.undo().undo_remove(outcome);
 			}
-			return Err(e.into())
+			return Err(e.into());
 		}
 		self.blockchain().remove_header_metadata(hash);
 		Ok(())
@@ -2420,7 +2495,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 						.build();
 
 				let state = RefTrackingState::new(db_state, self.storage.clone(), None);
-				return Ok(RecordStatsState::new(state, None, self.state_usage.clone()))
+				return Ok(RecordStatsState::new(state, None, self.state_usage.clone()));
 			}
 		}
 
@@ -2521,7 +2596,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 			return Err(ClientError::UnknownBlock(format!(
 				"Can not pin block with hash `{:?}`. Block not found.",
 				hash
-			)))
+			)));
 		}
 
 		if self.blocks_pruning != BlocksPruning::KeepAll {
@@ -4226,8 +4301,9 @@ pub(crate) mod tests {
 			match pruning_mode {
 				// we can only revert to blocks for which we have state, if pruning is enabled
 				// then the last state available will be that of the latest finalized block
-				BlocksPruning::Some(_) =>
-					assert_eq!(backend.blockchain().info().finalized_number, 8),
+				BlocksPruning::Some(_) => {
+					assert_eq!(backend.blockchain().info().finalized_number, 8)
+				},
 				// otherwise if we're not doing state pruning we can revert past finalized blocks
 				_ => assert_eq!(backend.blockchain().info().finalized_number, 5),
 			}

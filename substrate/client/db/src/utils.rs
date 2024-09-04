@@ -58,6 +58,21 @@ pub mod meta_keys {
 	pub const CHILDREN_PREFIX: &[u8; 8] = b"children";
 }
 
+#[derive(codec::Encode, codec::Decode, Debug, Clone)]
+pub enum BlockGapType {
+	/// Both the header and body are missing.
+	MissingAll,
+	/// The block body is missing.
+	MissingBody,
+}
+
+#[derive(codec::Encode, codec::Decode, Debug, Clone)]
+pub struct BlockGap<N> {
+	pub start: N,
+	pub end: N,
+	pub gap_type: BlockGapType,
+}
+
 /// Database metadata.
 #[derive(Debug)]
 pub struct Meta<N, H> {
@@ -74,7 +89,7 @@ pub struct Meta<N, H> {
 	/// Finalized state, if any
 	pub finalized_state: Option<(H, N)>,
 	/// Block gap, start and end inclusive, if any.
-	pub block_gap: Option<(N, N)>,
+	pub block_gap: Option<BlockGap<N>>,
 }
 
 /// A block lookup key: used for canonical lookup from block number to hash
@@ -197,7 +212,7 @@ fn open_database_at<Block: BlockT>(
 			open_kvdb_rocksdb::<Block>(path, db_type, create, *cache_size)?,
 		DatabaseSource::Custom { db, require_create_flag } => {
 			if *require_create_flag && !create {
-				return Err(OpenDbError::DoesNotExist)
+				return Err(OpenDbError::DoesNotExist);
 			}
 			db.clone()
 		},
@@ -364,7 +379,7 @@ pub fn check_database_type(
 				return Err(OpenDbError::UnexpectedDbType {
 					expected: db_type,
 					found: stored_type.to_owned(),
-				})
+				});
 			},
 		None => {
 			let mut transaction = Transaction::new();
