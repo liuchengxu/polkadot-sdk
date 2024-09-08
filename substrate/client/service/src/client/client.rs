@@ -44,7 +44,7 @@ use sc_client_api::{
 	ProofProvider, UnpinWorkerMessage, UsageProvider,
 };
 use sc_consensus::{
-	BlockCheckParams, BlockImportParams, ForkChoiceStrategy, ImportResult, StateAction,
+	BlockCheckParams, BlockImportParams, ForkChoiceStrategy, ImportResult, ImportedAux, StateAction,
 };
 use sc_executor::RuntimeVersion;
 use sc_telemetry::{telemetry, TelemetryHandle, SUBSTRATE_INFO};
@@ -603,6 +603,8 @@ where
 			(true, blockchain::BlockStatus::Unknown) => {},
 		}
 
+		let body_exists = body.is_some();
+
 		let info = self.backend.blockchain().info();
 		let gap_block = info
 			.block_gap
@@ -819,7 +821,9 @@ where
 			})
 		}
 
-		Ok(ImportResult::imported(is_new_best))
+		let imported_aux =
+			ImportedAux { is_new_best, header_only: !body_exists, ..Default::default() };
+		Ok(ImportResult::Imported(imported_aux))
 	}
 
 	/// Prepares the storage changes for a block.

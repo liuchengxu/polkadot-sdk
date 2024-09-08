@@ -1734,12 +1734,6 @@ impl<Block: BlockT> Backend<Block> {
 							// Gap decreased when doing the gap sync (downloading the full blocks).
 							} else if number == gap.start && body_exists {
 								gap.start += One::one();
-								utils::insert_number_to_key_mapping(
-									&mut transaction,
-									columns::KEY_LOOKUP,
-									number,
-									hash,
-								)?;
 								if gap.start > gap.end {
 									transaction.remove(columns::META, meta_keys::BLOCK_GAP);
 									block_gap = None;
