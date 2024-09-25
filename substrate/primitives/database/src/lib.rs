@@ -37,9 +37,34 @@ pub enum Change<H> {
 	Release(ColumnId, H),
 }
 
+impl<H: std::fmt::Debug> std::fmt::Debug for Change<H> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		use sp_core::hexdisplay::HexDisplay;
+		match self {
+			Self::Set(col, key, value) => f
+				.debug_tuple("Set")
+				.field(col)
+				.field(&HexDisplay::from(key))
+				.field(&HexDisplay::from(value))
+				.finish(),
+			Self::Remove(col, key) => {
+				f.debug_tuple("Remove").field(col).field(&HexDisplay::from(key)).finish()
+			},
+			Self::Store(col, h, value) => f
+				.debug_tuple("Store")
+				.field(col)
+				.field(h)
+				.field(&HexDisplay::from(value))
+				.finish(),
+			Self::Reference(col, h) => f.debug_tuple("Reference").field(col).field(h).finish(),
+			Self::Release(col, h) => f.debug_tuple("Release").field(col).field(h).finish(),
+		}
+	}
+}
+
 /// A series of changes to the database that can be committed atomically. They do not take effect
 /// until passed into `Database::commit`.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct Transaction<H>(pub Vec<Change<H>>);
 
 impl<H> Transaction<H> {
