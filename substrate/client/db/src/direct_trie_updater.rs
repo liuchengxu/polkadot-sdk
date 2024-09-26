@@ -1,15 +1,14 @@
-use crate::DbHash;
+use crate::{columns, DbHash};
 use hash_db::{AsHashDB, HashDB, HashDBRef, Hasher, Prefix};
-use sp_database::{Database, Transaction};
+use sp_database::{Change, Database, Transaction};
 use sp_state_machine::TrieBackendStorage;
-use sp_trie::{DBValue, PrefixedMemoryDB};
-use std::marker::PhantomData;
-use std::sync::Arc;
+use sp_trie::DBValue;
+use std::{marker::PhantomData, sync::Arc};
 
 /// Updates the state trie in the database directly.
 ///
-/// The storage updates directly happen in the database, instead of collecting the DB transactions
-/// in `PrefixedMemoryDB` and then applied to the database later.
+/// The storage updates directly happen in the database, instead of being collected into
+/// a `PrefixedMemoryDB` and then applied to the database later.
 ///
 /// Similar to `Ephemeral` in trie-backend-essence, but uses persistent overlay.
 pub(crate) struct DirectTrieUpdater<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> {
@@ -43,7 +42,7 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 	fn get(&self, key: &H::Out, prefix: Prefix) -> Option<DBValue> {
 		let db_key = sp_trie::prefixed_key::<H>(key, prefix);
 
-		self.persistent_overlay.get(crate::columns::STATE, &db_key).or_else(|| {
+		self.persistent_overlay.get(columns::STATE, &db_key).or_else(|| {
 			self.storage.get(key, prefix).unwrap_or_else(|e| {
 				log::warn!(target: "trie", "Failed to read from DB: {}", e);
 				None
@@ -58,10 +57,8 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 	fn insert(&mut self, prefix: Prefix, value: &[u8]) -> H::Out {
 		let key = H::hash(value);
 
-		let prefixed_key = sp_trie::prefixed_key::<H>(&key, prefix);
-		let mut tx = Transaction::new();
-		tx.set(crate::columns::STATE, &prefixed_key, value);
-
+		let db_key = sp_trie::prefixed_key::<H>(&key, prefix);
+		let tx = Transaction(vec![Change::Set(columns::STATE, db_key, value)]);
 		println!("[insert] tx: {tx:?}");
 		self.persistent_overlay.commit(tx).unwrap();
 
@@ -70,16 +67,14 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 
 	fn emplace(&mut self, key: H::Out, prefix: Prefix, value: DBValue) {
 		let key = sp_trie::prefixed_key::<H>(&key, prefix);
-		let mut tx = Transaction::new();
-		tx.set(crate::columns::STATE, &key, &value);
+		let tx = Transaction(vec![Change::Set(columns::STATE, key, value)]);
 		println!("[emplace] tx: {tx:?}");
 		self.persistent_overlay.commit(tx).unwrap();
 	}
 
 	fn remove(&mut self, key: &H::Out, prefix: Prefix) {
 		let key = sp_trie::prefixed_key::<H>(&key, prefix);
-		let mut tx = Transaction::new();
-		tx.remove(crate::columns::STATE, &key);
+		let tx = Transaction(vec![Change::Remove(columns::STATE, key)]);
 		println!("[remove] tx: {tx:?}");
 		self.persistent_overlay.commit(tx).unwrap();
 	}

@@ -2024,7 +2024,7 @@ fn test_pinned_blocks_on_finalize_with_fork() {
 }
 
 #[test]
-fn test_new_reset_storage() {
+fn test_living_trie_db_updater() {
 	let state_version = StateVersion::default();
 	let backend = Backend::<Block>::new_test(10, 10);
 
@@ -2129,7 +2129,7 @@ fn test_new_reset_storage() {
 
 		let parent_hash = hash0;
 
-		println!("\n================== [mutable_trie] Start building block#1");
+		println!("\n================== [direct_trie_updater] Start building block#1");
 
 		backend.begin_state_operation(&mut op, parent_hash).unwrap();
 
@@ -2148,26 +2148,47 @@ fn test_new_reset_storage() {
 			.map(|(k, v)| (k, Some(v)))
 			.collect::<Vec<_>>();
 
+		use sp_runtime::traits::BlakeTwo256;
+
 		let backend_storage = backend.expose_storage();
 
 		let (db, _state_col) = backend.expose_db();
 
-		let mut mutable_trie = crate::mutable_trie_db::DirectTrieUpdater::new(&backend_storage, db);
+		let mut trie_db_updater =
+			crate::direct_trie_updater::DirectTrieUpdater::new(&backend_storage, db.clone());
+		let mut prev_root = root;
 
-		use sp_runtime::traits::BlakeTwo256;
+		for (index, item) in delta.clone().into_iter().enumerate() {
+			let root = sp_trie::delta_trie_root::<sp_trie::LayoutV0<BlakeTwo256>, _, _, _, _, _>(
+				&mut trie_db_updater,
+				prev_root.clone(),
+				vec![item],
+				None,
+				None,
+			)
+			.unwrap();
+			prev_root = root;
+			println!("=========== index: {index}, root: {root:?}");
+		}
+		header.state_root = prev_root;
+
+		/*
+		let mut direct_trie_updater =
+			crate::direct_trie_updater::DirectTrieUpdater::new(&backend_storage, db);
+
 		let root = sp_trie::delta_trie_root::<sp_trie::LayoutV0<BlakeTwo256>, _, _, _, _, _>(
-			&mut mutable_trie,
+			&mut direct_trie_updater,
 			root,
 			delta,
 			None,
 			None,
 		)
 		.unwrap();
-
 		header.state_root = root;
+		*/
 
-		println!("============== [mutable_trie] state root: {root:?}");
-		println!("============== [mutable_trie] header hash root: {:?}", header.hash());
+		println!("============== [direct_trie_updater] state root: {:?}", header.state_root);
+		println!("============== [direct_trie_updater] header hash: {:?}", header.hash());
 
 		let main_sc = storage_block_1.into_iter().map(|(k, v)| (k, Some(v))).collect::<Vec<_>>();
 
@@ -2179,10 +2200,12 @@ fn test_new_reset_storage() {
 
 		backend.commit_operation(op).unwrap();
 
-		root
+		(header.hash(), header.state_root)
 	};
 
-	let state_root1_new = build_block_1_with_mutable_trie();
+	let (hash1_new, state_root1_new) = build_block_1_with_mutable_trie();
+
+	assert_eq!(hash1, hash1_new);
 
 	let (state_storage_root, _) =
 		backend.state_at(hash1).unwrap().storage_root(vec![].into_iter(), state_version);

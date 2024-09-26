@@ -47,9 +47,8 @@ impl<H: std::fmt::Debug> std::fmt::Debug for Change<H> {
 				.field(&HexDisplay::from(key))
 				.field(&HexDisplay::from(value))
 				.finish(),
-			Self::Remove(col, key) => {
-				f.debug_tuple("Remove").field(col).field(&HexDisplay::from(key)).finish()
-			},
+			Self::Remove(col, key) =>
+				f.debug_tuple("Remove").field(col).field(&HexDisplay::from(key)).finish(),
 			Self::Store(col, h, value) => f
 				.debug_tuple("Store")
 				.field(col)
