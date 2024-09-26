@@ -2152,7 +2152,7 @@ fn test_new_reset_storage() {
 
 		let (db, _state_col) = backend.expose_db();
 
-		let mut mutable_trie = crate::mutable_trie::MutableTrie::new(&backend_storage, db);
+		let mut mutable_trie = crate::mutable_trie_db::DirectTrieUpdater::new(&backend_storage, db);
 
 		use sp_runtime::traits::BlakeTwo256;
 		let root = sp_trie::delta_trie_root::<sp_trie::LayoutV0<BlakeTwo256>, _, _, _, _, _>(
@@ -2184,7 +2184,8 @@ fn test_new_reset_storage() {
 
 	let state_root1_new = build_block_1_with_mutable_trie();
 
-	let (state_storage_root, _) = backend.state_at(hash1).unwrap().storage_root(vec![].into_iter(), state_version);
+	let (state_storage_root, _) =
+		backend.state_at(hash1).unwrap().storage_root(vec![].into_iter(), state_version);
 	println!("=============== state_storage_root: {:?}", state_storage_root);
 
 	assert_eq!(state_root1, state_root1_new);

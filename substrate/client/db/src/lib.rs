@@ -33,6 +33,7 @@ pub mod offchain;
 pub mod bench;
 
 mod children;
+mod mutable_trie_db;
 mod parity_db;
 mod pinned_blocks_cache;
 mod record_stats_state;
@@ -42,7 +43,6 @@ mod tests;
 #[cfg(any(feature = "rocksdb", test))]
 mod upgrade;
 mod utils;
-mod mutable_trie;
 
 use linked_hash_map::LinkedHashMap;
 use log::{debug, trace, warn};
