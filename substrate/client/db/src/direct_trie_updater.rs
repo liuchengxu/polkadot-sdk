@@ -58,7 +58,7 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 		let key = H::hash(value);
 
 		let db_key = sp_trie::prefixed_key::<H>(&key, prefix);
-		let tx = Transaction(vec![Change::Set(columns::STATE, db_key, value)]);
+		let tx = Transaction(vec![Change::Set(columns::STATE, db_key, value.to_vec())]);
 		println!("[insert] tx: {tx:?}");
 		self.persistent_overlay.commit(tx).unwrap();
 
