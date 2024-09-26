@@ -2028,9 +2028,7 @@ fn test_new_reset_storage() {
 	let state_version = StateVersion::default();
 	let backend = Backend::<Block>::new_test(10, 10);
 
-	let storage_db = backend.expose_storage();
-
-	let (hash0, state_root0) = {
+	let build_block_0 = || {
 		let mut op = backend.begin_operation().unwrap();
 		backend.begin_state_operation(&mut op, Default::default()).unwrap();
 		let mut header = Header {
@@ -2071,8 +2069,12 @@ fn test_new_reset_storage() {
 		(hash, state_root)
 	};
 
-	let build_new_block_with_reset_storage = || {
-		println!("====================== Start building block #1");
+	let (hash0, state_root0) = build_block_0();
+
+	let storage_block_1 = vec![(b"k3".to_vec(), b"v3".to_vec()), (b"k4".to_vec(), b"v4".to_vec())];
+
+	let build_block_1_with_reset_storage = || {
+		println!("\n====================== [reset_storage] Start building block #1");
 		let mut op = backend.begin_operation().unwrap();
 		let parent_hash = hash0;
 		backend.begin_state_operation(&mut op, parent_hash).unwrap();
@@ -2084,11 +2086,12 @@ fn test_new_reset_storage() {
 			extrinsics_root: Default::default(),
 		};
 
-		let storage = vec![(b"k3".to_vec(), b"v3".to_vec()), (b"k4".to_vec(), b"v4".to_vec())];
-
 		header.state_root = op
 			.old_state
-			.storage_root(storage.iter().map(|(x, y)| (&x[..], Some(&y[..]))), state_version)
+			.storage_root(
+				storage_block_1.iter().map(|(x, y)| (&x[..], Some(&y[..]))),
+				state_version,
+			)
 			.0
 			.into();
 		let state_root = header.state_root;
@@ -2097,11 +2100,12 @@ fn test_new_reset_storage() {
 			header.state_root
 		);
 		let hash = header.hash();
+		println!("[reset_storage] Block#1 header hash: {hash:?}");
 
 		let state_root_after_reset_storage = op
 			.reset_storage(
 				Storage {
-					top: storage.into_iter().collect(),
+					top: storage_block_1.clone().into_iter().collect(),
 					children_default: Default::default(),
 				},
 				state_version,
@@ -2117,14 +2121,15 @@ fn test_new_reset_storage() {
 		(hash, state_root)
 	};
 
-	// let (hash1, state_root1) = build_new_block_with_reset_storage();
+	let (hash1, state_root1) = build_block_1_with_reset_storage();
+	backend.revert(1, true).unwrap();
 
-	{
+	let build_block_1_with_mutable_trie = || {
 		let mut op = backend.begin_operation().unwrap();
 
 		let parent_hash = hash0;
 
-		println!("================== Start building block#1");
+		println!("\n================== [mutable_trie] Start building block#1");
 
 		backend.begin_state_operation(&mut op, parent_hash).unwrap();
 
@@ -2136,36 +2141,51 @@ fn test_new_reset_storage() {
 			extrinsics_root: Default::default(),
 		};
 
-		let storage = vec![(b"k3".to_vec(), b"v3".to_vec()), (b"k4".to_vec(), b"v4".to_vec())];
-
 		let root = state_root0;
-		let delta = storage.clone().into_iter().map(|(k, v)| (k, Some(v))).collect::<Vec<_>>();
+		let delta = storage_block_1
+			.clone()
+			.into_iter()
+			.map(|(k, v)| (k, Some(v)))
+			.collect::<Vec<_>>();
 
-		let mut write_overlay = sp_trie::PrefixedMemoryDB::default();
 		let backend_storage = backend.expose_storage();
-		let mut eph = crate::mutable_trie::MutableTrie::new(&backend_storage, &mut write_overlay);
+
+		let (db, _state_col) = backend.expose_db();
+
+		let mut mutable_trie = crate::mutable_trie::MutableTrie::new(&backend_storage, db);
 
 		use sp_runtime::traits::BlakeTwo256;
-		sp_trie::delta_trie_root::<sp_trie::LayoutV0<BlakeTwo256>, _, _, _, _, _>(
-			&mut eph, root, delta, None, None,
+		let root = sp_trie::delta_trie_root::<sp_trie::LayoutV0<BlakeTwo256>, _, _, _, _, _>(
+			&mut mutable_trie,
+			root,
+			delta,
+			None,
+			None,
 		)
 		.unwrap();
 
-		let main_sc = storage.into_iter().map(|(k, v)| (k, Some(v))).collect::<Vec<_>>();
+		header.state_root = root;
+
+		println!("============== [mutable_trie] state root: {root:?}");
+		println!("============== [mutable_trie] header hash root: {:?}", header.hash());
+
+		let main_sc = storage_block_1.into_iter().map(|(k, v)| (k, Some(v))).collect::<Vec<_>>();
 
 		// TODO: db_updates
 		op.update_storage(main_sc, Vec::new()).expect("Update storage");
-
-		// 1. old_state + new_keys
-		// 2. calculate the storage root
-		//
-		// Storage => DatabaseTransaction?
 
 		op.set_block_data(header.clone(), Some(vec![]), None, None, NewBlockState::Best)
 			.unwrap();
 
 		backend.commit_operation(op).unwrap();
 
-		// hash
-	}
+		root
+	};
+
+	let state_root1_new = build_block_1_with_mutable_trie();
+
+	let (state_storage_root, _) = backend.state_at(hash1).unwrap().storage_root(vec![].into_iter(), state_version);
+	println!("=============== state_storage_root: {:?}", state_storage_root);
+
+	assert_eq!(state_root1, state_root1_new);
 }
