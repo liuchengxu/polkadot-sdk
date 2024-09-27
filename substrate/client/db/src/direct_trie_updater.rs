@@ -59,7 +59,6 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 
 		let db_key = sp_trie::prefixed_key::<H>(&key, prefix);
 		let tx = Transaction(vec![Change::Set(columns::STATE, db_key, value.to_vec())]);
-		println!("[insert] tx: {tx:?}");
 		self.persistent_overlay.commit(tx).unwrap();
 
 		key
@@ -68,14 +67,12 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 	fn emplace(&mut self, key: H::Out, prefix: Prefix, value: DBValue) {
 		let key = sp_trie::prefixed_key::<H>(&key, prefix);
 		let tx = Transaction(vec![Change::Set(columns::STATE, key, value)]);
-		println!("[emplace] tx: {tx:?}");
 		self.persistent_overlay.commit(tx).unwrap();
 	}
 
 	fn remove(&mut self, key: &H::Out, prefix: Prefix) {
 		let key = sp_trie::prefixed_key::<H>(&key, prefix);
 		let tx = Transaction(vec![Change::Remove(columns::STATE, key)]);
-		println!("[remove] tx: {tx:?}");
 		self.persistent_overlay.commit(tx).unwrap();
 	}
 }

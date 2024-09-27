@@ -1551,10 +1551,6 @@ impl<Block: BlockT> Backend<Block> {
 				let mut bytes: u64 = 0;
 				let mut removal: u64 = 0;
 				let mut bytes_removal: u64 = 0;
-				println!(
-					"[try_commit_operation] op.db_updates: {:?}",
-					operation.db_updates.clone().drain()
-				);
 				for (mut key, (val, rc)) in operation.db_updates.drain() {
 					self.storage.db.sanitize_key(&mut key);
 					if rc > 0 {
@@ -1783,7 +1779,6 @@ impl<Block: BlockT> Backend<Block> {
 			}
 		}
 
-		println!("self.storage.db.commit, transaction: {transaction:?}");
 		self.storage.db.commit(transaction)?;
 
 		// Apply all in-memory state changes.
@@ -2512,6 +2507,47 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 				},
 			}
 		}
+	}
+
+	fn update_trie_db(
+		&self,
+		at: Block::Hash,
+		storage: sp_runtime::Storage,
+		state_version: sp_runtime::StateVersion,
+	) -> sp_blockchain::Result<Block::Hash> {
+		let backend_storage = self.expose_storage();
+		let (db, _state_col) = self.expose_db();
+
+		let delta = storage.top.into_iter().map(|(k, v)| (k, Some(v)));
+
+		let root = self.blockchain.header_metadata(at).map(|header| header.state_root)?;
+
+		// Update the trie with the entire delta directly.
+		let mut direct_trie_updater =
+			crate::direct_trie_updater::DirectTrieUpdater::new(&backend_storage, db);
+
+		let state_root = match state_version {
+			StateVersion::V0 => sp_trie::delta_trie_root::<
+				sp_trie::LayoutV0<HashingFor<Block>>,
+				_,
+				_,
+				_,
+				_,
+				_,
+			>(&mut direct_trie_updater, root, delta, None, None)
+			.unwrap(),
+			StateVersion::V1 => sp_trie::delta_trie_root::<
+				sp_trie::LayoutV1<HashingFor<Block>>,
+				_,
+				_,
+				_,
+				_,
+				_,
+			>(&mut direct_trie_updater, root, delta, None, None)
+			.unwrap(),
+		};
+
+		Ok(state_root)
 	}
 
 	fn get_import_lock(&self) -> &RwLock<()> {
