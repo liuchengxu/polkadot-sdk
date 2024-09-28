@@ -2532,8 +2532,8 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 		assert!(storage.children_default.is_empty());
 		let delta = storage.top.into_iter().map(|(k, v)| (k, Some(v)));
 
-		// let root = self.blockchain.header_metadata(at).map(|header| header.state_root)?;
-		let root = EmptyStorage::<Block>::new().0; // Empty trie
+		let root = self.blockchain.header_metadata(at).map(|header| header.state_root)?;
+		// let root = EmptyStorage::<Block>::new().0; // Empty trie
 
 		// Update the trie with the entire delta directly.
 		let mut trie_db_updater =
