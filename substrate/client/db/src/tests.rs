@@ -2030,105 +2030,62 @@ fn test_direct_trie_updater() {
 	let state_version = StateVersion::default();
 	let backend = Backend::<Block>::new_test(10, 10);
 
-	let build_block_0 = || {
-		let mut op = backend.begin_operation().unwrap();
-		backend.begin_state_operation(&mut op, Default::default()).unwrap();
-		let mut header = Header {
-			number: 0,
-			parent_hash: Default::default(),
-			state_root: Default::default(),
-			digest: Default::default(),
-			extrinsics_root: Default::default(),
+	// Build a block using the existing `reset_storage` API.
+	let build_block =
+		|number, parent_hash, changes: Vec<(Vec<u8>, Vec<u8>)>| {
+			println!("\n[reset_storage] Start building block #{number}");
+
+			let mut op = backend.begin_operation().unwrap();
+			backend.begin_state_operation(&mut op, parent_hash).unwrap();
+			let mut header = Header {
+				number,
+				parent_hash,
+				state_root: Default::default(),
+				digest: Default::default(),
+				extrinsics_root: Default::default(),
+			};
+
+			header.state_root = op
+				.old_state
+				.storage_root(changes.iter().map(|(x, y)| (&x[..], Some(&y[..]))), state_version)
+				.0
+				.into();
+			let state_root = header.state_root;
+			println!(
+				"[reset_storage] After op.old_state.storage_root(), state_root: {:?}",
+				header.state_root
+			);
+			let hash = header.hash();
+
+			let state_root_after_reset_storage = op
+				.reset_storage(
+					Storage {
+						top: changes.into_iter().collect(),
+						children_default: Default::default(),
+					},
+					state_version,
+				)
+				.unwrap();
+			println!("[reset_storage] state_root_after_reset_storage: {state_root_after_reset_storage:?}");
+			op.set_block_data(header.clone(), Some(vec![]), None, None, NewBlockState::Best)
+				.unwrap();
+
+			backend.commit_operation(op).unwrap();
+
+			println!("[reset_storage] ====================== hash: {hash:?}");
+			(hash, state_root)
 		};
 
-		let storage = vec![(b"k1".to_vec(), b"v1".to_vec()), (b"k2".to_vec(), b"v2".to_vec())];
-
-		header.state_root = op
-			.old_state
-			.storage_root(storage.iter().map(|(x, y)| (&x[..], Some(&y[..]))), state_version)
-			.0
-			.into();
-		let state_root = header.state_root;
-		println!("op.old_state.storage_root(), state_root: {:?}", header.state_root);
-		let hash = header.hash();
-
-		let state_root_after_reset_storage = op
-			.reset_storage(
-				Storage {
-					top: storage.into_iter().collect(),
-					children_default: Default::default(),
-				},
-				state_version,
-			)
-			.unwrap();
-		println!("state_root_after_reset_storage: {state_root_after_reset_storage:?}");
-		op.set_block_data(header.clone(), Some(vec![]), None, None, NewBlockState::Best)
-			.unwrap();
-
-		backend.commit_operation(op).unwrap();
-
-		println!("[reset_storage] ====================== hash: {hash:?}");
-		(hash, state_root)
-	};
-
-	let (hash0, state_root0) = build_block_0();
+	let changes = vec![(b"k1".to_vec(), b"v1".to_vec()), (b"k2".to_vec(), b"v2".to_vec())];
+	let (hash0, state_root0) = build_block(0, Default::default(), changes);
 
 	// Data collected from a local fast-sync run.
 	let storage_block_1 = vec![(
 		hex::decode("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac").unwrap(),
 		hex::decode("0c0b0000").unwrap(),
 	)];
+	let (hash1, state_root1) = build_block(1, hash0, storage_block_1.clone());
 
-	// Build block 1 using the old reset_storage API.
-	let build_block_1_with_reset_storage = || {
-		println!("\n====================== [reset_storage] Start building block #1");
-		let mut op = backend.begin_operation().unwrap();
-		let parent_hash = hash0;
-		backend.begin_state_operation(&mut op, parent_hash).unwrap();
-		let mut header = Header {
-			number: 1,
-			parent_hash,
-			state_root: Default::default(),
-			digest: Default::default(),
-			extrinsics_root: Default::default(),
-		};
-
-		header.state_root = op
-			.old_state
-			.storage_root(
-				storage_block_1.iter().map(|(x, y)| (&x[..], Some(&y[..]))),
-				state_version,
-			)
-			.0
-			.into();
-		let state_root = header.state_root;
-		println!(
-			"After applying new storage, op.old_state.storage_root(), state_root: {:?}",
-			header.state_root
-		);
-		let hash = header.hash();
-		println!("[reset_storage] Block#1 header hash: {hash:?}");
-
-		let state_root_after_reset_storage = op
-			.reset_storage(
-				Storage {
-					top: storage_block_1.clone().into_iter().collect(),
-					children_default: Default::default(),
-				},
-				state_version,
-			)
-			.unwrap();
-		println!("state_root_after_reset_storage: {state_root_after_reset_storage:?}");
-		op.set_block_data(header.clone(), Some(vec![]), None, None, NewBlockState::Best)
-			.unwrap();
-
-		backend.commit_operation(op).unwrap();
-
-		println!("[reset_storage] ====================== hash: {hash:?}");
-		(hash, state_root)
-	};
-
-	let (hash1, state_root1) = build_block_1_with_reset_storage();
 	backend.revert(1, true).unwrap();
 
 	// Build block 1 using the new API that supports altering the state database directly.
