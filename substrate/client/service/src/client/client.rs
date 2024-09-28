@@ -686,18 +686,19 @@ where
 							&storage,
 							&self.executor,
 						)?;
-						// let state_root = operation.op.reset_storage(storage, state_version)?;
-						tracing::info!(
-							"============================ import headers : {:?}",
-							import_headers
-						);
-						let state_root =
-							self.backend.update_trie_db(parent_hash, storage, state_version)?;
-						tracing::info!("============================ Imported state with update_trie_db, state_root: {state_root:?}");
-						tracing::info!(
-							"============================ post state_root: {:?}",
-							import_headers.post().state_root()
-						);
+						tracing::info!("========== storage.top size: {}, storage.children_default size: {}", storage.top.len(), storage.children_default.len());
+						let state_root = operation.op.reset_storage(storage, state_version)?;
+						// tracing::info!(
+							// "============================ import headers : {:?}",
+							// import_headers
+						// );
+						// let state_root =
+							// self.backend.update_trie_db(parent_hash, storage, state_version)?;
+						// tracing::info!("============================ Imported state with update_trie_db, state_root: {state_root:?}");
+						// tracing::info!(
+							// "============================ post state_root: {:?}",
+							// import_headers.post().state_root()
+						// );
 						if state_root != *import_headers.post().state_root() {
 							// State root mismatch when importing state. This should not happen in
 							// safe fast sync mode, but may happen in unsafe mode.

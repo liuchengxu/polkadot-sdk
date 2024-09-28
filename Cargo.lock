@@ -18511,6 +18511,7 @@ dependencies = [
  "array-bytes",
  "criterion",
  "hash-db",
+ "hex",
  "kitchensink-runtime",
  "kvdb",
  "kvdb-memorydb",

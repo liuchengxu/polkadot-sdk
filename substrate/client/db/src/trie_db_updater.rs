@@ -11,7 +11,7 @@ use std::{marker::PhantomData, sync::Arc};
 /// a `PrefixedMemoryDB` and then applied to the database later.
 ///
 /// Similar to `Ephemeral` in trie-backend-essence, but uses persistent overlay.
-pub(crate) struct DirectTrieUpdater<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> {
+pub(crate) struct TrieDbUpdater<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> {
 	/// Old state storage.
 	storage: &'a S,
 	/// State DB.
@@ -20,7 +20,7 @@ pub(crate) struct DirectTrieUpdater<'a, S: 'a + TrieBackendStorage<H>, H: 'a + H
 }
 
 impl<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> AsHashDB<H, DBValue>
-	for DirectTrieUpdater<'a, S, H>
+	for TrieDbUpdater<'a, S, H>
 {
 	fn as_hash_db<'b>(&'b self) -> &'b (dyn HashDB<H, DBValue> + 'b) {
 		self
@@ -30,14 +30,14 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> AsHashDB<H, DBValue>
 	}
 }
 
-impl<'a, S: TrieBackendStorage<H>, H: Hasher> DirectTrieUpdater<'a, S, H> {
+impl<'a, S: TrieBackendStorage<H>, H: Hasher> TrieDbUpdater<'a, S, H> {
 	pub fn new(storage: &'a S, persistent_overlay: Arc<dyn Database<DbHash>>) -> Self {
 		Self { storage, persistent_overlay, _phantom: Default::default() }
 	}
 }
 
 impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
-	for DirectTrieUpdater<'a, S, H>
+	for TrieDbUpdater<'a, S, H>
 {
 	fn get(&self, key: &H::Out, prefix: Prefix) -> Option<DBValue> {
 		let db_key = sp_trie::prefixed_key::<H>(key, prefix);
@@ -78,7 +78,7 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 }
 
 impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> HashDBRef<H, DBValue>
-	for DirectTrieUpdater<'a, S, H>
+	for TrieDbUpdater<'a, S, H>
 {
 	fn get(&self, key: &H::Out, prefix: Prefix) -> Option<DBValue> {
 		HashDB::get(self, key, prefix)

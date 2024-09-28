@@ -291,21 +291,28 @@ pub fn delta_trie_root<L: TrieConfiguration, I, A, B, DB, V>(
 ) -> Result<TrieHash<L>, Box<TrieError<L>>>
 where
 	I: IntoIterator<Item = (A, B)>,
-	A: Borrow<[u8]>,
+	A: Borrow<[u8]> + core::fmt::Debug,
 	B: Borrow<Option<V>>,
 	V: Borrow<[u8]>,
 	DB: hash_db::HashDB<L::Hash, trie_db::DBValue>,
 {
 	{
+		#[cfg(feature = "std")]
+		println!("=================== [delta_trie_root] Enter, root: {root:?}");
 		let mut trie = TrieDBMutBuilder::<L>::from_existing(db, &mut root)
 			.with_optional_cache(cache)
 			.with_optional_recorder(recorder)
 			.build();
+		#[cfg(feature = "std")]
+		println!("=================== [delta_trie_root] Trie built");
 
 		let mut delta = delta.into_iter().collect::<Vec<_>>();
+		let total = delta.len();
 		delta.sort_by(|l, r| l.0.borrow().cmp(r.0.borrow()));
 
-		for (key, change) in delta {
+		for (index, (key, change)) in delta.into_iter().enumerate() {
+			#[cfg(feature = "std")]
+			println!("=================== [delta_trie_root] Processing: {index}/{total}, key: {key:?}, change is_some: {:?}", change.borrow().is_some());
 			match change.borrow() {
 				Some(val) => trie.insert(key.borrow(), val.borrow())?,
 				None => trie.remove(key.borrow())?,
@@ -397,7 +404,7 @@ pub fn child_delta_trie_root<L: TrieConfiguration, I, A, B, DB, RD, V>(
 ) -> Result<<L::Hash as Hasher>::Out, Box<TrieError<L>>>
 where
 	I: IntoIterator<Item = (A, B)>,
-	A: Borrow<[u8]>,
+	A: Borrow<[u8]> + core::fmt::Debug,
 	B: Borrow<Option<V>>,
 	V: Borrow<[u8]>,
 	RD: AsRef<[u8]>,
