@@ -39,7 +39,7 @@ mod record_stats_state;
 mod stats;
 #[cfg(test)]
 mod tests;
-mod trie_db_updater;
+mod trie_committer;
 #[cfg(any(feature = "rocksdb", test))]
 mod upgrade;
 mod utils;
@@ -2520,7 +2520,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 		}
 	}
 
-	fn update_trie_db(
+	fn commit_trie_changes(
 		&self,
 		at: Block::Hash,
 		storage: sp_runtime::Storage,
@@ -2529,15 +2529,14 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 		let backend_storage = self.expose_storage();
 		let (db, _state_col) = self.expose_db();
 
+		// TODO: handle child storage properly.
 		assert!(storage.children_default.is_empty());
+
 		let delta = storage.top.into_iter().map(|(k, v)| (k, Some(v)));
 
 		let root = self.blockchain.header_metadata(at).map(|header| header.state_root)?;
-		// let root = EmptyStorage::<Block>::new().0; // Empty trie
 
-		// Update the trie with the entire delta directly.
-		let mut trie_db_updater =
-			crate::trie_db_updater::TrieDbUpdater::new(&backend_storage, db);
+		let mut trie_committer = crate::trie_committer::TrieCommitter::new(&backend_storage, db);
 
 		let state_root = match state_version {
 			StateVersion::V0 => sp_trie::delta_trie_root::<
@@ -2547,7 +2546,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 				_,
 				_,
 				_,
-			>(&mut trie_db_updater, root, delta, None, None)
+			>(&mut trie_committer, root, delta, None, None)
 			.unwrap(),
 			StateVersion::V1 => sp_trie::delta_trie_root::<
 				sp_trie::LayoutV1<HashingFor<Block>>,
@@ -2556,7 +2555,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 				_,
 				_,
 				_,
-			>(&mut trie_db_updater, root, delta, None, None)
+			>(&mut trie_committer, root, delta, None, None)
 			.unwrap(),
 		};
 

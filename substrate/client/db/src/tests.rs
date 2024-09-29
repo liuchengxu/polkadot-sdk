@@ -2119,15 +2119,15 @@ fn test_direct_trie_updater() {
 			let backend_storage = backend.expose_storage();
 			let (db, _state_col) = backend.expose_db();
 
-			let mut trie_db_updater =
-				crate::trie_db_updater::TrieDbUpdater::new(&backend_storage, db);
+			let mut trie_committer =
+				crate::trie_committer::TrieCommitter::new(&backend_storage, db);
 			let mut prev_root = root;
 
 			for (index, item) in delta.clone().into_iter().rev().enumerate() {
 				let transient_root = match state_version {
 					StateVersion::V0 => {
 						sp_trie::delta_trie_root::<sp_trie::LayoutV0<BlakeTwo256>, _, _, _, _, _>(
-							&mut trie_db_updater,
+							&mut trie_committer,
 							prev_root,
 							vec![item],
 							None,
@@ -2137,7 +2137,7 @@ fn test_direct_trie_updater() {
 					},
 					StateVersion::V1 => {
 						sp_trie::delta_trie_root::<sp_trie::LayoutV1<BlakeTwo256>, _, _, _, _, _>(
-							&mut trie_db_updater,
+							&mut trie_committer,
 							prev_root,
 							vec![item],
 							None,
@@ -2156,7 +2156,7 @@ fn test_direct_trie_updater() {
 		// Update the trie with the entire delta directly.
 		let update_trie_with_delta = || {
 			backend
-				.update_trie_db(
+				.commit_trie_changes(
 					parent_hash,
 					sp_runtime::Storage {
 						top: storage_block_1.clone().into_iter().collect(),
@@ -2174,7 +2174,7 @@ fn test_direct_trie_updater() {
 
 		// No db_updates.
 		// Unlike `reset_storage`, no db_updates here as the DB changes has already been written to
-		// the database in `TrieDbUpdater`.
+		// the database in `TrieCommitter`.
 		op.update_storage(main_sc, Vec::new()).expect("Update storage");
 
 		op.set_block_data(header.clone(), Some(vec![]), None, None, NewBlockState::Best)

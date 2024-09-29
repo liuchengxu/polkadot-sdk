@@ -693,8 +693,8 @@ where
 							// import_headers
 						// );
 						// let state_root =
-							// self.backend.update_trie_db(parent_hash, storage, state_version)?;
-						// tracing::info!("============================ Imported state with update_trie_db, state_root: {state_root:?}");
+							// self.backend.commit_trie_changes(parent_hash, storage, state_version)?;
+						// tracing::info!("============================ Imported state with commit_trie_changes, state_root: {state_root:?}");
 						// tracing::info!(
 							// "============================ post state_root: {:?}",
 							// import_headers.post().state_root()

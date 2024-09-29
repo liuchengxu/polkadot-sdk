@@ -5,22 +5,21 @@ use sp_state_machine::TrieBackendStorage;
 use sp_trie::DBValue;
 use std::{marker::PhantomData, sync::Arc};
 
-/// Updates the state trie in the database directly.
+/// [`TrieCommitter`] is responsible for committing trie state changes
+/// directly into the database, bypassing the in-memory intermediate storage
+/// (`PrefixedMemoryDB`).
 ///
-/// The storage updates directly happen in the database, instead of being collected into
-/// a `PrefixedMemoryDB` and then applied to the database later.
-///
-/// Similar to `Ephemeral` in trie-backend-essence, but uses persistent overlay.
-pub(crate) struct TrieDbUpdater<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> {
-	/// Old state storage.
+/// This approach avoids potential OOM issues during the large state import.
+pub(crate) struct TrieCommitter<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> {
+	/// Old state storage backend.
 	storage: &'a S,
-	/// State DB.
-	persistent_overlay: Arc<dyn Database<DbHash>>,
+	/// Handle to the trie database where changes will be committed.
+	trie_database: Arc<dyn Database<DbHash>>,
 	_phantom: PhantomData<H>,
 }
 
 impl<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> AsHashDB<H, DBValue>
-	for TrieDbUpdater<'a, S, H>
+	for TrieCommitter<'a, S, H>
 {
 	fn as_hash_db<'b>(&'b self) -> &'b (dyn HashDB<H, DBValue> + 'b) {
 		self
@@ -30,19 +29,19 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> AsHashDB<H, DBValue>
 	}
 }
 
-impl<'a, S: TrieBackendStorage<H>, H: Hasher> TrieDbUpdater<'a, S, H> {
-	pub fn new(storage: &'a S, persistent_overlay: Arc<dyn Database<DbHash>>) -> Self {
-		Self { storage, persistent_overlay, _phantom: Default::default() }
+impl<'a, S: TrieBackendStorage<H>, H: Hasher> TrieCommitter<'a, S, H> {
+	pub fn new(storage: &'a S, trie_database: Arc<dyn Database<DbHash>>) -> Self {
+		Self { storage, trie_database, _phantom: Default::default() }
 	}
 }
 
 impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
-	for TrieDbUpdater<'a, S, H>
+	for TrieCommitter<'a, S, H>
 {
 	fn get(&self, key: &H::Out, prefix: Prefix) -> Option<DBValue> {
 		let db_key = sp_trie::prefixed_key::<H>(key, prefix);
 
-		self.persistent_overlay.get(columns::STATE, &db_key).or_else(|| {
+		self.trie_database.get(columns::STATE, &db_key).or_else(|| {
 			self.storage.get(key, prefix).unwrap_or_else(|e| {
 				log::warn!(target: "trie", "Failed to read from DB: {}", e);
 				None
@@ -59,7 +58,7 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 
 		let db_key = sp_trie::prefixed_key::<H>(&key, prefix);
 		let tx = Transaction(vec![Change::Set(columns::STATE, db_key, value.to_vec())]);
-		self.persistent_overlay.commit(tx).unwrap();
+		self.trie_database.commit(tx).expect("TODO: handle unwrap properly");
 
 		key
 	}
@@ -67,18 +66,18 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> hash_db::HashDB<H, DBValue>
 	fn emplace(&mut self, key: H::Out, prefix: Prefix, value: DBValue) {
 		let key = sp_trie::prefixed_key::<H>(&key, prefix);
 		let tx = Transaction(vec![Change::Set(columns::STATE, key, value)]);
-		self.persistent_overlay.commit(tx).unwrap();
+		self.trie_database.commit(tx).expect("TODO: handle unwrap properly");
 	}
 
 	fn remove(&mut self, key: &H::Out, prefix: Prefix) {
 		let key = sp_trie::prefixed_key::<H>(&key, prefix);
 		let tx = Transaction(vec![Change::Remove(columns::STATE, key)]);
-		self.persistent_overlay.commit(tx).unwrap();
+		self.trie_database.commit(tx).expect("TODO: handle unwrap properly");
 	}
 }
 
 impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> HashDBRef<H, DBValue>
-	for TrieDbUpdater<'a, S, H>
+	for TrieCommitter<'a, S, H>
 {
 	fn get(&self, key: &H::Out, prefix: Prefix) -> Option<DBValue> {
 		HashDB::get(self, key, prefix)

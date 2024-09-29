@@ -746,7 +746,7 @@ impl<Block: BlockT> backend::Backend<Block> for Backend<Block> {
 			.ok_or_else(|| sp_blockchain::Error::UnknownBlock(format!("{}", hash)))
 	}
 
-	fn update_trie_db(
+	fn commit_trie_changes(
 		&self,
 		at: Block::Hash,
 		storage: sp_runtime::Storage,
