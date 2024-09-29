@@ -9,24 +9,15 @@ use std::{marker::PhantomData, sync::Arc};
 /// directly into the database, bypassing the in-memory intermediate storage
 /// (`PrefixedMemoryDB`).
 ///
-/// This approach avoids potential OOM issues during the large state import.
+/// This approach avoids potential OOM issues that can arise when dealing with
+/// large state imports, especially when importing the state downloaded during
+/// the fast sync or warp sync.
 pub(crate) struct TrieCommitter<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> {
 	/// Old state storage backend.
 	storage: &'a S,
 	/// Handle to the trie database where changes will be committed.
 	trie_database: Arc<dyn Database<DbHash>>,
 	_phantom: PhantomData<H>,
-}
-
-impl<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> AsHashDB<H, DBValue>
-	for TrieCommitter<'a, S, H>
-{
-	fn as_hash_db<'b>(&'b self) -> &'b (dyn HashDB<H, DBValue> + 'b) {
-		self
-	}
-	fn as_hash_db_mut<'b>(&'b mut self) -> &'b mut (dyn HashDB<H, DBValue> + 'b) {
-		self
-	}
 }
 
 impl<'a, S: TrieBackendStorage<H>, H: Hasher> TrieCommitter<'a, S, H> {
@@ -85,5 +76,16 @@ impl<'a, S: 'a + TrieBackendStorage<H>, H: Hasher> HashDBRef<H, DBValue>
 
 	fn contains(&self, key: &H::Out, prefix: Prefix) -> bool {
 		HashDB::contains(self, key, prefix)
+	}
+}
+
+impl<'a, S: 'a + TrieBackendStorage<H>, H: 'a + Hasher> AsHashDB<H, DBValue>
+	for TrieCommitter<'a, S, H>
+{
+	fn as_hash_db<'b>(&'b self) -> &'b (dyn HashDB<H, DBValue> + 'b) {
+		self
+	}
+	fn as_hash_db_mut<'b>(&'b mut self) -> &'b mut (dyn HashDB<H, DBValue> + 'b) {
+		self
 	}
 }

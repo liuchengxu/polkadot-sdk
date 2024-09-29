@@ -2024,7 +2024,7 @@ fn test_pinned_blocks_on_finalize_with_fork() {
 }
 
 #[test]
-fn test_direct_trie_updater() {
+fn test_commit_trie_changes() {
 	use sp_runtime::traits::BlakeTwo256;
 
 	let state_version = StateVersion::default();
@@ -2086,15 +2086,15 @@ fn test_direct_trie_updater() {
 	)];
 	let (hash1, state_root1) = build_block(1, hash0, storage_block_1.clone());
 
+	// Revert block #1 and then rebuild it using trie_committer.
 	backend.revert(1, true).unwrap();
 
-	// Build block 1 using the new API that supports altering the state database directly.
-	let build_block_1_with_direct_trie_updater = || {
+	let build_block_1_with_trie_committer = || {
 		let mut op = backend.begin_operation().unwrap();
 
 		let parent_hash = hash0;
 
-		println!("\n================== [direct_trie_updater] Start building block#1");
+		println!("\n================== [trie_committer] Start building block#1");
 
 		backend.begin_state_operation(&mut op, parent_hash).unwrap();
 
@@ -2185,7 +2185,7 @@ fn test_direct_trie_updater() {
 		(header.hash(), header.state_root)
 	};
 
-	let (hash1_new, state_root1_new) = build_block_1_with_direct_trie_updater();
+	let (hash1_new, state_root1_new) = build_block_1_with_trie_committer();
 
 	assert_eq!(hash1, hash1_new);
 
