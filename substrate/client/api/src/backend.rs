@@ -232,6 +232,9 @@ pub trait BlockImportOperation<Block: BlockT> {
 	/// Add a transaction index operation.
 	fn update_transaction_index(&mut self, index: Vec<IndexOperation>)
 		-> sp_blockchain::Result<()>;
+
+	/// Configure whether to commit the state changes to the underlying database.
+	fn set_commit_state(&mut self, commit: bool);
 }
 
 /// Interface for performing operations on the backend.
@@ -632,6 +635,27 @@ pub trait Backend<Block: BlockT>: AuxStore + Send + Sync {
 
 	/// Tells whether the backend requires full-sync mode.
 	fn requires_full_sync(&self) -> bool;
+
+	/// Import the state changes directly to the database.
+	///
+	/// # Arguments
+	///
+	/// - `at`: The block hash corresponding to the last available state before updating the trie
+	///   database.
+	/// - `storage`: The storage changes reflecting the transition from the last local state to the
+	///   target block's state being imported.
+	/// - `state_version`: The state version of the target block, which is resolved from the
+	///   provided `storage` data.
+	///
+	/// # Returns
+	///
+	/// Returns the state root after importing the state.
+	fn import_state(
+		&self,
+		at: Block::Hash,
+		storage: sp_runtime::Storage,
+		state_version: sp_runtime::StateVersion,
+	) -> sp_blockchain::Result<Block::Hash>;
 }
 
 /// Mark for all Backend implementations, that are making use of state data, stored locally.

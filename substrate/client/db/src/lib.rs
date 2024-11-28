@@ -33,6 +33,7 @@ pub mod offchain;
 pub mod bench;
 
 mod children;
+mod state_importer;
 mod parity_db;
 mod pinned_blocks_cache;
 mod record_stats_state;
@@ -55,6 +56,7 @@ use crate::{
 	pinned_blocks_cache::PinnedBlocksCache,
 	record_stats_state::RecordStatsState,
 	stats::StateUsageStats,
+	state_importer::StateImporter,
 	utils::{meta_keys, read_db, read_meta, DatabaseType, Meta},
 };
 use codec::{Decode, Encode};
@@ -90,7 +92,7 @@ use sp_state_machine::{
 	OffchainChangesCollection, StateMachineStats, StorageCollection, StorageIterator, StorageKey,
 	StorageValue, UsageInfo as StateUsageInfo,
 };
-use sp_trie::{cache::SharedTrieCache, prefixed_key, MemoryDB, MerkleValue, PrefixedMemoryDB};
+use sp_trie::{cache::SharedTrieCache, prefixed_key, MemoryDB, MerkleValue, PrefixedMemoryDB, TrieError};
 
 // Re-export the Database trait so that one can pass an implementation of it.
 pub use sc_state_db::PruningMode;
@@ -112,6 +114,9 @@ const DB_HASH_LEN: usize = 32;
 
 /// Hash type that this backend uses for the database.
 pub type DbHash = sp_core::H256;
+
+type LayoutV0<Block> = sp_trie::LayoutV0<HashingFor<Block>>;
+type LayoutV1<Block> = sp_trie::LayoutV1<HashingFor<Block>>;
 
 /// An extrinsic entry in the database.
 #[derive(Debug, Encode, Decode)]
@@ -994,6 +999,10 @@ impl<Block: BlockT> sc_client_api::backend::BlockImportOperation<Block>
 	fn update_transaction_index(&mut self, index_ops: Vec<IndexOperation>) -> ClientResult<()> {
 		self.index_ops = index_ops;
 		Ok(())
+	}
+
+	fn set_commit_state(&mut self, commit: bool) {
+		self.commit_state = commit;
 	}
 }
 
@@ -2453,6 +2462,129 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 			},
 			Err(e) => Err(e),
 		}
+	}
+
+	fn import_state(
+		&self,
+		at: Block::Hash,
+		storage: sp_runtime::Storage,
+		state_version: sp_runtime::StateVersion,
+	) -> sp_blockchain::Result<Block::Hash> {
+		let root = self.blockchain.header_metadata(at).map(|header| header.state_root)?;
+
+		let storage_db: Arc<dyn sp_state_machine::Storage<HashingFor<Block>>> =
+			self.storage.clone();
+		let mut state_importer = StateImporter::new(&storage_db, self.storage.db.clone());
+
+		let trie_err =
+			|err: Box<TrieError<LayoutV0<Block>>>| sp_blockchain::Error::Application(err);
+
+		let child_deltas = storage.children_default.values().map(|child_content| {
+			(
+				&child_content.child_info,
+				child_content.data.iter().map(|(k, v)| (&k[..], Some(&v[..]))),
+			)
+		});
+
+		let mut child_roots = Vec::new();
+
+		// child first
+		for (child_info, child_delta) in child_deltas {
+			let default_root = match child_info.child_type() {
+				sp_storage::ChildType::ParentKeyId =>
+					sp_trie::empty_child_trie_root::<LayoutV1<Block>>(),
+			};
+
+			let new_child_root = match state_version {
+				StateVersion::V0 => {
+					let child_root = match crate::state_importer::read_child_root::<
+						_,
+						_,
+						LayoutV0<Block>,
+					>(&state_importer, &root, &child_info)
+					{
+						Ok(Some(hash)) => hash,
+						Ok(None) => default_root,
+						Err(e) => {
+							warn!(target: "trie", "Failed to read child storage root: {}", e);
+							default_root
+						},
+					};
+
+					sp_trie::child_delta_trie_root::<LayoutV0<Block>, _, _, _, _, _, _>(
+						child_info.keyspace(),
+						&mut state_importer,
+						child_root,
+						child_delta,
+						None,
+						None,
+					)
+					.map_err(trie_err)?
+				},
+				StateVersion::V1 => {
+					let child_root = match crate::state_importer::read_child_root::<
+						_,
+						_,
+						LayoutV1<Block>,
+					>(&state_importer, &root, &child_info)
+					{
+						Ok(Some(hash)) => hash,
+						Ok(None) => default_root,
+						Err(e) => {
+							warn!(target: "trie", "Failed to read child storage root: {}", e);
+							default_root
+						},
+					};
+
+					sp_trie::child_delta_trie_root::<LayoutV1<Block>, _, _, _, _, _, _>(
+						child_info.keyspace(),
+						&mut state_importer,
+						child_root,
+						child_delta,
+						None,
+						None,
+					)
+					.map_err(trie_err)?
+				},
+			};
+
+			let is_default = new_child_root == default_root;
+
+			let prefixed_storage_key = child_info.prefixed_storage_key().into_inner();
+
+			if is_default {
+				child_roots.push((prefixed_storage_key, None));
+			} else {
+				child_roots.push((prefixed_storage_key, Some(new_child_root.encode())));
+			}
+		}
+
+		let delta = storage
+			.top
+			.into_iter()
+			.map(|(k, v)| (k, Some(v)))
+			.chain(child_roots.into_iter());
+
+		let state_root = match state_version {
+			StateVersion::V0 => sp_trie::delta_trie_root::<LayoutV0<Block>, _, _, _, _, _>(
+				&mut state_importer,
+				root,
+				delta,
+				None,
+				None,
+			)
+			.map_err(trie_err)?,
+			StateVersion::V1 => sp_trie::delta_trie_root::<LayoutV1<Block>, _, _, _, _, _>(
+				&mut state_importer,
+				root,
+				delta,
+				None,
+				None,
+			)
+			.map_err(trie_err)?,
+		};
+
+		Ok(state_root)
 	}
 
 	fn have_state_at(&self, hash: Block::Hash, number: NumberFor<Block>) -> bool {

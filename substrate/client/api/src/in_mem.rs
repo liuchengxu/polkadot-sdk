@@ -584,6 +584,8 @@ impl<Block: BlockT> backend::BlockImportOperation<Block> for BlockImportOperatio
 	) -> sp_blockchain::Result<()> {
 		Ok(())
 	}
+
+	fn set_commit_state(&mut self, _commit: bool) {}
 }
 
 /// In-memory backend. Keeps all states and blocks in memory.
@@ -773,6 +775,15 @@ impl<Block: BlockT> backend::Backend<Block> for Backend<Block> {
 	fn unpin_block(&self, hash: <Block as BlockT>::Hash) {
 		let mut blocks = self.pinned_blocks.write();
 		blocks.entry(hash).and_modify(|counter| *counter -= 1).or_insert(-1);
+	}
+
+	fn import_state(
+		&self,
+		_at: Block::Hash,
+		_storage: sp_runtime::Storage,
+		_state_version: sp_runtime::StateVersion,
+	) -> sp_blockchain::Result<Block::Hash> {
+		unimplemented!("Not needed for in-mem backend")
 	}
 }
 
