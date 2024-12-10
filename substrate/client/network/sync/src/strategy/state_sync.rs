@@ -29,7 +29,7 @@ use sc_consensus::ImportedState;
 use smallvec::SmallVec;
 use sp_core::storage::well_known_keys;
 use sp_runtime::{
-	traits::{Block as BlockT, Header, NumberFor},
+	traits::{Block as BlockT, HashingFor, Header, NumberFor},
 	Justifications,
 };
 use std::{collections::HashMap, fmt, sync::Arc};
@@ -142,6 +142,7 @@ impl<B: BlockT> StateSyncMetadata<B> {
 pub struct StateSync<B: BlockT, Client> {
 	metadata: StateSyncMetadata<B>,
 	state: HashMap<Vec<u8>, (Vec<(Vec<u8>, Vec<u8>)>, Vec<Vec<u8>>)>,
+	state_db: sp_trie::PrefixedMemoryDB<HashingFor<B>>,
 	client: Arc<Client>,
 }
 
@@ -170,6 +171,7 @@ where
 				skip_proof,
 			},
 			state: HashMap::default(),
+			state_db: Default::default(),
 		}
 	}
 
@@ -257,11 +259,11 @@ where
 	fn import(&mut self, response: StateResponse) -> ImportResult<B> {
 		if response.entries.is_empty() && response.proof.is_empty() {
 			debug!(target: LOG_TARGET, "Bad state response");
-			return ImportResult::BadResponse
+			return ImportResult::BadResponse;
 		}
 		if !self.metadata.skip_proof && response.proof.is_empty() {
 			debug!(target: LOG_TARGET, "Missing proof");
-			return ImportResult::BadResponse
+			return ImportResult::BadResponse;
 		}
 		let complete = if !self.metadata.skip_proof {
 			debug!(target: LOG_TARGET, "Importing state from {} trie nodes", response.proof.len());
@@ -270,10 +272,10 @@ where
 				Ok(proof) => proof,
 				Err(e) => {
 					debug!(target: LOG_TARGET, "Error decoding proof: {:?}", e);
-					return ImportResult::BadResponse
+					return ImportResult::BadResponse;
 				},
 			};
-			let (values, completed) = match self.client.verify_range_proof(
+			let ((values, completed), prefixed_db) = match self.client.verify_range_proof(
 				self.metadata.target_root(),
 				proof,
 				self.metadata.last_key.as_slice(),
@@ -284,7 +286,7 @@ where
 						"StateResponse failed proof verification: {}",
 						e,
 					);
-					return ImportResult::BadResponse
+					return ImportResult::BadResponse;
 				},
 				Ok(values) => values,
 			};
@@ -294,6 +296,8 @@ where
 			if !complete && !values.update_last_key(completed, &mut self.metadata.last_key) {
 				debug!(target: LOG_TARGET, "Error updating key cursor, depth: {}", completed);
 			};
+
+			self.state_db.consolidate(prefixed_db);
 
 			self.process_state_verified(values);
 			self.metadata.imported_bytes += proof_size;
@@ -307,7 +311,7 @@ where
 			ImportResult::Import(
 				target_hash,
 				self.metadata.target_header.clone(),
-				ImportedState { block: target_hash, state: std::mem::take(&mut self.state).into() },
+				ImportedState { block: target_hash, state_db: std::mem::take(&mut self.state_db) },
 				self.metadata.target_body.clone(),
 				self.metadata.target_justifications.clone(),
 			)

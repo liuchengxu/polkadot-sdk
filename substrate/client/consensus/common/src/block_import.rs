@@ -132,7 +132,7 @@ pub struct ImportedState<B: BlockT> {
 	/// Target block hash.
 	pub block: B::Hash,
 	/// State keys and values.
-	pub state: sp_state_machine::KeyValueStates,
+	pub state_db: sp_trie::PrefixedMemoryDB<HashingFor<B>>,
 }
 
 impl<B: BlockT> std::fmt::Debug for ImportedState<B> {

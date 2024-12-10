@@ -225,6 +225,28 @@ impl CompactProof {
 
 		Ok((db, root))
 	}
+
+	/// Convert self into a [`MemoryDB`](crate::MemoryDB).
+	///
+	/// `expected_root` is the expected root of this compact proof.
+	///
+	/// Returns the memory db and the root of the trie.
+	pub fn to_prefixed_memory_db<H: Hasher>(
+		&self,
+		expected_root: Option<&H::Out>,
+	) -> Result<
+		(crate::PrefixedMemoryDB<H>, H::Out),
+		crate::CompactProofError<H::Out, crate::Error<H::Out>>,
+	> {
+		let mut db = crate::PrefixedMemoryDB::<H>::new(&[]);
+		let root = crate::decode_compact::<Layout<H>, _, _>(
+			&mut db,
+			self.iter_compact_encoded_nodes(),
+			expected_root,
+		)?;
+
+		Ok((db, root))
+	}
 }
 
 #[cfg(test)]

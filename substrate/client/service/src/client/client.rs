@@ -518,7 +518,7 @@ where
 		} = import_block;
 
 		if !intermediates.is_empty() {
-			return Err(Error::IncompletePipeline)
+			return Err(Error::IncompletePipeline);
 		}
 
 		let fork_choice = fork_choice.ok_or(Error::IncompletePipeline)?;
@@ -616,7 +616,7 @@ where
 			*import_headers.post().number() <= info.finalized_number &&
 			!gap_block
 		{
-			return Err(sp_blockchain::Error::NotInFinalizedChain)
+			return Err(sp_blockchain::Error::NotInFinalizedChain);
 		}
 
 		// this is a fairly arbitrary choice of where to draw the line on making notifications,
@@ -647,6 +647,7 @@ where
 						Some((main_sc, child_sc))
 					},
 					sc_consensus::StorageChanges::Import(changes) => {
+						/*
 						let mut storage = sp_storage::Storage::default();
 						for state in changes.state.0.into_iter() {
 							if state.parent_storage_keys.is_empty() && state.state_root.is_empty() {
@@ -658,12 +659,14 @@ where
 									let storage_key = PrefixedStorageKey::new_ref(&parent_storage);
 									let storage_key =
 										match ChildType::from_prefixed_key(storage_key) {
-											Some((ChildType::ParentKeyId, storage_key)) =>
-												storage_key,
-											None =>
+											Some((ChildType::ParentKeyId, storage_key)) => {
+												storage_key
+											},
+											None => {
 												return Err(Error::Backend(
 													"Invalid child storage key.".to_string(),
-												)),
+												))
+											},
 										};
 									let entry = storage
 										.children_default
@@ -690,8 +693,10 @@ where
 							// State root mismatch when importing state. This should not happen in
 							// safe fast sync mode, but may happen in unsafe mode.
 							warn!("Error importing state: State root mismatch.");
-							return Err(Error::InvalidStateRoot)
+							return Err(Error::InvalidStateRoot);
 						}
+						*/
+						operation.op.import_state_db(changes.state_db);
 						None
 					},
 				};
@@ -889,7 +894,7 @@ where
 
 				if import_block.header.state_root() != &gen_storage_changes.transaction_storage_root
 				{
-					return Err(Error::InvalidStateRoot)
+					return Err(Error::InvalidStateRoot);
 				}
 				Some(sc_consensus::StorageChanges::Changes(gen_storage_changes))
 			},
@@ -915,7 +920,7 @@ where
 				"Possible safety violation: attempted to re-finalize last finalized block {:?} ",
 				hash,
 			);
-			return Ok(())
+			return Ok(());
 		}
 
 		// Find tree route from last finalized to given block.
@@ -929,7 +934,7 @@ where
 				retracted, info.finalized_hash
 			);
 
-			return Err(sp_blockchain::Error::NotInFinalizedChain)
+			return Err(sp_blockchain::Error::NotInFinalizedChain);
 		}
 
 		// We may need to coercively update the best block if there is more than one
@@ -1013,7 +1018,7 @@ where
 				// since we won't be running the loop below which
 				// would also remove any closed sinks.
 				sinks.retain(|sink| !sink.is_closed());
-				return Ok(())
+				return Ok(());
 			},
 		};
 
@@ -1049,7 +1054,7 @@ where
 
 				self.every_import_notification_sinks.lock().retain(|sink| !sink.is_closed());
 
-				return Ok(())
+				return Ok(());
 			},
 		};
 
@@ -1148,7 +1153,7 @@ where
 			.as_ref()
 			.map_or(false, |importing| &hash == importing)
 		{
-			return Ok(BlockStatus::Queued)
+			return Ok(BlockStatus::Queued);
 		}
 
 		let hash_and_number = self.backend.blockchain().number(hash)?.map(|n| (hash, n));
@@ -1194,7 +1199,7 @@ where
 
 		let genesis_hash = self.backend.blockchain().info().genesis_hash;
 		if genesis_hash == target_hash {
-			return Ok(Vec::new())
+			return Ok(Vec::new());
 		}
 
 		let mut current_hash = target_hash;
@@ -1210,7 +1215,7 @@ where
 			current_hash = ancestor_hash;
 
 			if genesis_hash == current_hash {
-				break
+				break;
 			}
 
 			current = ancestor;
@@ -1295,7 +1300,7 @@ where
 		size_limit: usize,
 	) -> sp_blockchain::Result<Vec<(KeyValueStorageLevel, bool)>> {
 		if start_key.len() > MAX_NESTED_TRIE_DEPTH {
-			return Err(Error::Backend("Invalid start key.".to_string()))
+			return Err(Error::Backend("Invalid start key.".to_string()));
 		}
 		let state = self.state_at(hash)?;
 		let child_info = |storage_key: &Vec<u8>| -> sp_blockchain::Result<ChildInfo> {
@@ -1314,7 +1319,7 @@ where
 			{
 				Some((child_info(start_key)?, child_root))
 			} else {
-				return Err(Error::Backend("Invalid root start key.".to_string()))
+				return Err(Error::Backend("Invalid root start key.".to_string()));
 			}
 		} else {
 			None
@@ -1358,7 +1363,7 @@ where
 				let size = value.len() + next_key.len();
 				if total_size + size > size_limit && !entries.is_empty() {
 					complete = false;
-					break
+					break;
 				}
 				total_size += size;
 
@@ -1369,7 +1374,7 @@ where
 					child_roots.insert(value.clone());
 					switch_child_key = Some((next_key.clone(), value.clone()));
 					entries.push((next_key.clone(), value));
-					break
+					break;
 				}
 				entries.push((next_key.clone(), value));
 				current_key = next_key;
@@ -1389,12 +1394,12 @@ where
 					complete,
 				));
 				if !complete {
-					break
+					break;
 				}
 			} else {
 				result[0].0.key_values.extend(entries.into_iter());
 				result[0].1 = complete;
-				break
+				break;
 			}
 		}
 		Ok(result)
@@ -1405,7 +1410,17 @@ where
 		root: Block::Hash,
 		proof: CompactProof,
 		start_key: &[Vec<u8>],
-	) -> sp_blockchain::Result<(KeyValueStates, usize)> {
+	) -> sp_blockchain::Result<(
+		(KeyValueStates, usize),
+		sp_trie::PrefixedMemoryDB<HashingFor<Block>>,
+	)> {
+		let prefixed_db = proof
+			.to_prefixed_memory_db(Some(&root))
+			.map_err(|e| sp_blockchain::Error::from_state(Box::new(e)))?
+			.0;
+		for entry in prefixed_db.clone().drain() {
+			log::info!("============ prefixed_db: {entry:?}");
+		}
 		let mut db = sp_state_machine::MemoryDB::<HashingFor<Block>>::new(&[]);
 		// Compact encoding
 		let _ = sp_trie::decode_compact::<sp_state_machine::LayoutV0<HashingFor<Block>>, _, _>(
@@ -1414,13 +1429,18 @@ where
 			Some(&root),
 		)
 		.map_err(|e| sp_blockchain::Error::from_state(Box::new(e)))?;
+
+		for entry in db.clone().drain() {
+			log::info!("============ db: {entry:?}");
+		}
+
 		let proving_backend = sp_state_machine::TrieBackendBuilder::new(db, root).build();
 		let state = read_range_proof_check_with_child_on_proving_backend::<HashingFor<Block>>(
 			&proving_backend,
 			start_key,
 		)?;
 
-		Ok(state)
+		Ok((state, prefixed_db))
 	}
 }
 
@@ -1799,7 +1819,7 @@ where
 		match self.block_rules.lookup(number, &hash) {
 			BlockLookupResult::KnownBad => {
 				trace!("Rejecting known bad block: #{} {:?}", number, hash);
-				return Ok(ImportResult::KnownBad)
+				return Ok(ImportResult::KnownBad);
 			},
 			BlockLookupResult::Expected(expected_hash) => {
 				trace!(
@@ -1808,7 +1828,7 @@ where
 					expected_hash,
 					number
 				);
-				return Ok(ImportResult::KnownBad)
+				return Ok(ImportResult::KnownBad);
 			},
 			BlockLookupResult::NotSpecial => {},
 		}
