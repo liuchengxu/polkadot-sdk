@@ -1418,9 +1418,9 @@ where
 			.to_prefixed_memory_db(Some(&root))
 			.map_err(|e| sp_blockchain::Error::from_state(Box::new(e)))?
 			.0;
-		for entry in prefixed_db.clone().drain() {
-			log::info!("============ prefixed_db: {entry:?}");
-		}
+		// for entry in prefixed_db.clone().drain() {
+		// log::info!("============ prefixed_db: {entry:?}");
+		// }
 		let mut db = sp_state_machine::MemoryDB::<HashingFor<Block>>::new(&[]);
 		// Compact encoding
 		let _ = sp_trie::decode_compact::<sp_state_machine::LayoutV0<HashingFor<Block>>, _, _>(
@@ -1430,9 +1430,9 @@ where
 		)
 		.map_err(|e| sp_blockchain::Error::from_state(Box::new(e)))?;
 
-		for entry in db.clone().drain() {
-			log::info!("============ db: {entry:?}");
-		}
+		// for entry in db.clone().drain() {
+		// log::info!("============ db: {entry:?}");
+		// }
 
 		let proving_backend = sp_state_machine::TrieBackendBuilder::new(db, root).build();
 		let state = read_range_proof_check_with_child_on_proving_backend::<HashingFor<Block>>(

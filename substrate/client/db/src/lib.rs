@@ -1575,6 +1575,7 @@ impl<Block: BlockT> Backend<Block> {
 					}
 				}
 
+				let from_import_db = operation.import_db.is_some();
 				if let Some(mut db) = operation.import_db {
 					for (mut key, (val, rc)) in db.drain() {
 						self.storage.db.sanitize_key(&mut key);
@@ -1617,7 +1618,11 @@ impl<Block: BlockT> Backend<Block> {
 					.map_err(|e: sc_state_db::Error<sp_database::error::DatabaseError>| {
 						sp_blockchain::Error::from_state_db(e)
 					})?;
-				apply_state_commit(&mut transaction, commit);
+				if from_import_db {
+					apply_state_commit_with_log(&mut transaction, commit);
+				} else {
+					apply_state_commit(&mut transaction, commit);
+				}
 				if number <= last_finalized_num {
 					// Canonicalize in the db when re-importing existing blocks with state.
 					let commit = self.storage.state_db.canonicalize_block(&hash).map_err(
@@ -1625,7 +1630,11 @@ impl<Block: BlockT> Backend<Block> {
 							sc_state_db::Error<sp_database::error::DatabaseError>,
 						>,
 					)?;
-					apply_state_commit(&mut transaction, commit);
+					if from_import_db {
+						apply_state_commit_with_log(&mut transaction, commit);
+					} else {
+						apply_state_commit(&mut transaction, commit);
+					}
 					meta_updates.push(MetaUpdate {
 						hash,
 						number,
@@ -2006,6 +2015,31 @@ impl<Block: BlockT> Backend<Block> {
 			.build();
 		let state = RefTrackingState::new(db_state, self.storage.clone(), None);
 		RecordStatsState::new(state, None, self.state_usage.clone())
+	}
+}
+
+fn apply_state_commit_with_log(
+	transaction: &mut Transaction<DbHash>,
+	commit: sc_state_db::CommitSet<Vec<u8>>,
+) {
+	log::info!("================================ Start");
+	for (key, val) in commit.data.inserted.into_iter() {
+		log::info!(
+			"[apply_state_commit_with_log] inserted: key: {:?}, value: {:?}",
+			sp_core::hexdisplay::HexDisplay::from(&key),
+			sp_core::hexdisplay::HexDisplay::from(&val)
+		);
+		transaction.set_from_vec(columns::STATE, &key[..], val);
+	}
+	log::info!("================================ End");
+	for key in commit.data.deleted.into_iter() {
+		transaction.remove(columns::STATE, &key[..]);
+	}
+	for (key, val) in commit.meta.inserted.into_iter() {
+		transaction.set_from_vec(columns::STATE_META, &key[..], val);
+	}
+	for key in commit.meta.deleted.into_iter() {
+		transaction.remove(columns::STATE_META, &key[..]);
 	}
 }
 
