@@ -586,6 +586,8 @@ impl<Block: BlockT> backend::BlockImportOperation<Block> for BlockImportOperatio
 	}
 
 	fn set_create_gap(&mut self, _create_gap: bool) {}
+
+	fn import_state_db(&mut self, _state_db: sp_trie::PrefixedMemoryDB<HashingFor<Block>>) {}
 }
 
 /// In-memory backend. Keeps all states and blocks in memory.

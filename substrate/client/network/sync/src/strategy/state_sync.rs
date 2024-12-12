@@ -87,6 +87,8 @@ pub enum ImportResult<B: BlockT> {
 	Continue,
 	/// Bad state chunk.
 	BadResponse,
+	/// Failed to convert the accumulated proof to `PrefixedMemoryDB`.
+	CorruptedProofData,
 }
 
 struct StateSyncMetadata<B: BlockT> {
@@ -142,6 +144,7 @@ impl<B: BlockT> StateSyncMetadata<B> {
 pub struct StateSync<B: BlockT, Client> {
 	metadata: StateSyncMetadata<B>,
 	state: HashMap<Vec<u8>, (Vec<(Vec<u8>, Vec<u8>)>, Vec<Vec<u8>>)>,
+	trie_nodes: Vec<Vec<u8>>,
 	client: Arc<Client>,
 }
 
@@ -170,6 +173,7 @@ where
 				skip_proof,
 			},
 			state: HashMap::default(),
+			trie_nodes: Vec::new(),
 		}
 	}
 
@@ -257,11 +261,11 @@ where
 	fn import(&mut self, response: StateResponse) -> ImportResult<B> {
 		if response.entries.is_empty() && response.proof.is_empty() {
 			debug!(target: LOG_TARGET, "Bad state response");
-			return ImportResult::BadResponse
+			return ImportResult::BadResponse;
 		}
 		if !self.metadata.skip_proof && response.proof.is_empty() {
 			debug!(target: LOG_TARGET, "Missing proof");
-			return ImportResult::BadResponse
+			return ImportResult::BadResponse;
 		}
 		let complete = if !self.metadata.skip_proof {
 			debug!(target: LOG_TARGET, "Importing state from {} trie nodes", response.proof.len());
@@ -270,12 +274,12 @@ where
 				Ok(proof) => proof,
 				Err(e) => {
 					debug!(target: LOG_TARGET, "Error decoding proof: {:?}", e);
-					return ImportResult::BadResponse
+					return ImportResult::BadResponse;
 				},
 			};
 			let (values, completed) = match self.client.verify_range_proof(
 				self.metadata.target_root(),
-				proof,
+				proof.clone(),
 				self.metadata.last_key.as_slice(),
 			) {
 				Err(e) => {
@@ -284,7 +288,7 @@ where
 						"StateResponse failed proof verification: {}",
 						e,
 					);
-					return ImportResult::BadResponse
+					return ImportResult::BadResponse;
 				},
 				Ok(values) => values,
 			};
@@ -295,7 +299,7 @@ where
 				debug!(target: LOG_TARGET, "Error updating key cursor, depth: {}", completed);
 			};
 
-			self.process_state_verified(values);
+			self.trie_nodes.extend(proof.encoded_nodes);
 			self.metadata.imported_bytes += proof_size;
 			complete
 		} else {
@@ -304,10 +308,25 @@ where
 		if complete {
 			self.metadata.complete = true;
 			let target_hash = self.metadata.target_hash();
+			let imported_state = if self.metadata.skip_proof {
+				ImportedState::FromKeyValue(std::mem::take(&mut self.state).into())
+			} else {
+				let compact_proof =
+					CompactProof { encoded_nodes: std::mem::take(&mut self.trie_nodes) };
+				let state_db =
+					match compact_proof.to_prefixed_memory_db(Some(&self.metadata.target_root())) {
+						Ok((state_db, _root)) => state_db,
+						Err(err) => {
+							debug!(target: LOG_TARGET, "Error converting CompactProof to PrefixedMemoryDB");
+							return ImportResult::CorruptedProofData;
+						},
+					};
+				ImportedState::FromProof { proof: state_db }
+			};
 			ImportResult::Import(
 				target_hash,
 				self.metadata.target_header.clone(),
-				ImportedState { block: target_hash, state: std::mem::take(&mut self.state).into() },
+				imported_state,
 				self.metadata.target_body.clone(),
 				self.metadata.target_justifications.clone(),
 			)

@@ -835,6 +835,7 @@ pub struct BlockImportOperation<Block: BlockT> {
 	set_head: Option<Block::Hash>,
 	commit_state: bool,
 	create_gap: bool,
+	import_db: Option<PrefixedMemoryDB<HashingFor<Block>>>,
 	index_ops: Vec<IndexOperation>,
 }
 
@@ -992,6 +993,11 @@ impl<Block: BlockT> sc_client_api::backend::BlockImportOperation<Block>
 
 	fn set_create_gap(&mut self, create_gap: bool) {
 		self.create_gap = create_gap;
+	}
+
+	fn import_state_db(&mut self, state_db: PrefixedMemoryDB<HashingFor<Block>>) {
+		self.import_db.replace(state_db);
+		self.commit_state = true;
 	}
 }
 
@@ -1536,7 +1542,7 @@ impl<Block: BlockT> Backend<Block> {
 				}
 			}
 
-			let finalized = if operation.commit_state {
+			let finalized = if operation.commit_state || operation.import_db.is_some() {
 				let mut changeset: sc_state_db::ChangeSet<Vec<u8>> =
 					sc_state_db::ChangeSet::default();
 				let mut ops: u64 = 0;
@@ -1568,6 +1574,23 @@ impl<Block: BlockT> Backend<Block> {
 						}
 					}
 				}
+
+				if let Some(mut db) = operation.import_db {
+					for (mut key, (val, rc)) in db.drain() {
+						self.storage.db.sanitize_key(&mut key);
+						if rc > 0 {
+							if rc == 1 {
+								changeset.inserted.push((key, val.to_vec()));
+							} else {
+								changeset.inserted.push((key.clone(), val.to_vec()));
+								for _ in 0..rc - 1 {
+									changeset.inserted.push((key.clone(), val.to_vec()));
+								}
+							}
+						}
+					}
+				}
+
 				self.state_usage.tally_writes_nodes(ops, bytes);
 				self.state_usage.tally_removed_nodes(removal, bytes_removal);
 
@@ -2119,6 +2142,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 			set_head: None,
 			commit_state: false,
 			create_gap: true,
+			import_db: None,
 			index_ops: Default::default(),
 		})
 	}

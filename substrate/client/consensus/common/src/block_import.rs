@@ -128,16 +128,21 @@ pub enum StorageChanges<Block: BlockT> {
 
 /// Imported state data. A vector of key-value pairs that should form a trie.
 #[derive(PartialEq, Eq, Clone)]
-pub struct ImportedState<B: BlockT> {
-	/// Target block hash.
-	pub block: B::Hash,
+pub enum ImportedState<B: BlockT> {
 	/// State keys and values.
-	pub state: sp_state_machine::KeyValueStates,
+	FromKeyValue(sp_state_machine::KeyValueStates),
+	/// State db.
+	FromProof { proof: sp_trie::PrefixedMemoryDB<HashingFor<B>> },
 }
 
 impl<B: BlockT> std::fmt::Debug for ImportedState<B> {
 	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-		fmt.debug_struct("ImportedState").field("block", &self.block).finish()
+		fmt.debug_tuple("ImportedState")
+			.field(&match self {
+				Self::FromKeyValue(_) => "FromKeyValue",
+				Self::FromProof { .. } => "FromProof",
+			})
+			.finish()
 	}
 }
 

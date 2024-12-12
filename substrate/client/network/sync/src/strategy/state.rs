@@ -240,6 +240,10 @@ impl<B: BlockT> StateStrategy<B> {
 				debug!(target: LOG_TARGET, "Bad state data received from {peer_id}");
 				Err(BadPeer(*peer_id, rep::BAD_STATE))
 			},
+			ImportResult::CorruptedProofData => {
+				debug!(target: LOG_TARGET, "Internal error");
+				Ok(())
+			},
 		}
 	}
 

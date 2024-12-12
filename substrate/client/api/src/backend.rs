@@ -34,6 +34,7 @@ use sp_state_machine::{
 };
 use sp_storage::{ChildInfo, StorageData, StorageKey};
 pub use sp_trie::MerkleValue;
+use sp_trie::PrefixedMemoryDB;
 
 use crate::{blockchain::Backend as BlockchainBackend, UsageInfo};
 
@@ -235,6 +236,8 @@ pub trait BlockImportOperation<Block: BlockT> {
 
 	/// Configure whether to create a block gap if newly imported block is missing parent
 	fn set_create_gap(&mut self, create_gap: bool);
+
+	fn import_state_db(&mut self, state_db: PrefixedMemoryDB<HashingFor<Block>>);
 }
 
 /// Interface for performing operations on the backend.

@@ -665,12 +665,19 @@ where
 						Some((main_sc, child_sc))
 					},
 					sc_consensus::StorageChanges::Import(changes) => {
-						import_key_value_states(
-							operation,
-							changes.state,
-							&self.executor,
-							*import_headers.post().state_root(),
-						)?;
+						match changes {
+							ImportedState::FromKeyValue(state) => {
+								import_key_value_states(
+									operation,
+									state,
+									&self.executor,
+									*import_headers.post().state_root(),
+								)?;
+							},
+							ImportedState::FromProof { proof } => {
+								operation.op.import_state_db(proof);
+							},
+						}
 						None
 					},
 				};
