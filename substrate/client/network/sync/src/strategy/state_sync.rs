@@ -317,7 +317,7 @@ where
 					match compact_proof.to_prefixed_memory_db(Some(&self.metadata.target_root())) {
 						Ok((state_db, _root)) => state_db,
 						Err(err) => {
-							debug!(target: LOG_TARGET, "Error converting CompactProof to PrefixedMemoryDB");
+							debug!(target: LOG_TARGET, "Error converting CompactProof to PrefixedMemoryDB: {err:?}");
 							return ImportResult::CorruptedProofData;
 						},
 					};
