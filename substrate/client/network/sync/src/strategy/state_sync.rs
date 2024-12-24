@@ -144,7 +144,7 @@ impl<B: BlockT> StateSyncMetadata<B> {
 pub struct StateSync<B: BlockT, Client> {
 	metadata: StateSyncMetadata<B>,
 	state: HashMap<Vec<u8>, (Vec<(Vec<u8>, Vec<u8>)>, Vec<Vec<u8>>)>,
-	trie_nodes: Vec<Vec<u8>>,
+	verified_proofs: Vec<CompactProof>,
 	client: Arc<Client>,
 }
 
@@ -173,7 +173,7 @@ where
 				skip_proof,
 			},
 			state: HashMap::default(),
-			trie_nodes: Vec::new(),
+			verified_proofs: Vec::new(),
 		}
 	}
 
@@ -299,7 +299,8 @@ where
 				debug!(target: LOG_TARGET, "Error updating key cursor, depth: {}", completed);
 			};
 
-			self.trie_nodes.extend(proof.encoded_nodes);
+			self.verified_proofs.push(proof);
+
 			self.metadata.imported_bytes += proof_size;
 			complete
 		} else {
@@ -311,17 +312,11 @@ where
 			let imported_state = if self.metadata.skip_proof {
 				ImportedState::FromKeyValue(std::mem::take(&mut self.state).into())
 			} else {
-				let compact_proof =
-					CompactProof { encoded_nodes: std::mem::take(&mut self.trie_nodes) };
-				let state_db =
-					match compact_proof.to_prefixed_memory_db(Some(&self.metadata.target_root())) {
-						Ok((state_db, _root)) => state_db,
-						Err(err) => {
-							debug!(target: LOG_TARGET, "Error converting CompactProof to PrefixedMemoryDB: {err:?}");
-							return ImportResult::CorruptedProofData;
-						},
-					};
-				ImportedState::FromProof { proof: state_db }
+				let verified_proofs = std::mem::take(&mut self.verified_proofs);
+				ImportedState::FromProof {
+					state_root: self.metadata.target_root(),
+					verified_proofs,
+				}
 			};
 			ImportResult::Import(
 				target_hash,

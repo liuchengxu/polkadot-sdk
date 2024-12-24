@@ -132,7 +132,7 @@ pub enum ImportedState<B: BlockT> {
 	/// State keys and values.
 	FromKeyValue(sp_state_machine::KeyValueStates),
 	/// State db.
-	FromProof { proof: sp_trie::PrefixedMemoryDB<HashingFor<B>> },
+	FromProof { state_root: B::Hash, verified_proofs: Vec<sp_trie::CompactProof> },
 }
 
 impl<B: BlockT> std::fmt::Debug for ImportedState<B> {

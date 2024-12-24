@@ -674,8 +674,19 @@ where
 									*import_headers.post().state_root(),
 								)?;
 							},
-							ImportedState::FromProof { proof } => {
-								operation.op.import_state_db(proof);
+							ImportedState::FromProof { state_root, verified_proofs } => {
+								for compact_proof in verified_proofs {
+									let state_db = match compact_proof
+										.to_prefixed_memory_db(Some(&state_root))
+									{
+										Ok((state_db, _root)) => state_db,
+										Err(err) => {
+											debug!(target: "substrate", "Error converting CompactProof to PrefixedMemoryDB: {err:?}");
+											panic!("Corrupted state proof")
+										},
+									};
+									operation.op.import_state_db(state_db);
+								}
 							},
 						}
 						None

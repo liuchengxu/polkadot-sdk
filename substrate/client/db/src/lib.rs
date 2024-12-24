@@ -835,7 +835,7 @@ pub struct BlockImportOperation<Block: BlockT> {
 	set_head: Option<Block::Hash>,
 	commit_state: bool,
 	create_gap: bool,
-	import_db: Option<PrefixedMemoryDB<HashingFor<Block>>>,
+	import_db: Vec<PrefixedMemoryDB<HashingFor<Block>>>,
 	index_ops: Vec<IndexOperation>,
 }
 
@@ -996,7 +996,7 @@ impl<Block: BlockT> sc_client_api::backend::BlockImportOperation<Block>
 	}
 
 	fn import_state_db(&mut self, state_db: PrefixedMemoryDB<HashingFor<Block>>) {
-		self.import_db.replace(state_db);
+		self.import_db.push(state_db);
 		self.commit_state = true;
 	}
 }
@@ -1542,7 +1542,7 @@ impl<Block: BlockT> Backend<Block> {
 				}
 			}
 
-			let finalized = if operation.commit_state || operation.import_db.is_some() {
+			let finalized = if operation.commit_state || !operation.import_db.is_empty() {
 				let mut changeset: sc_state_db::ChangeSet<Vec<u8>> =
 					sc_state_db::ChangeSet::default();
 				let mut ops: u64 = 0;
@@ -1575,7 +1575,7 @@ impl<Block: BlockT> Backend<Block> {
 					}
 				}
 
-				if let Some(mut db) = operation.import_db {
+				for mut db in operation.import_db {
 					for (mut key, (val, rc)) in db.drain() {
 						self.storage.db.sanitize_key(&mut key);
 						if rc > 0 {
@@ -2142,7 +2142,7 @@ impl<Block: BlockT> sc_client_api::backend::Backend<Block> for Backend<Block> {
 			set_head: None,
 			commit_state: false,
 			create_gap: true,
-			import_db: None,
+			import_db: Vec::new(),
 			index_ops: Default::default(),
 		})
 	}
